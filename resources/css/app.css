@@ -2,6 +2,8 @@
 
 @import 'tw-animate-css';
 
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
 @source '../views';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
@@ -139,5 +141,290 @@
 
     body {
         @apply bg-background text-foreground;
+    }
+}
+
+/* ============================================================
+   MAAC — Milaha AI Agent Center design tokens
+   Scoped to `.maac-theme` so the console adopts Milaha branding
+   (and shadcn atoms inside it follow suit) while the existing
+   auth/account screens keep the default starter-kit look.
+   ============================================================ */
+.maac-theme {
+    /* brand scales (theme-independent) */
+    --purple-50: #f6f0fb;
+    --purple-100: #ecdff6;
+    --purple-200: #d8bfee;
+    --purple-300: #bd93e0;
+    --purple-400: #9b59cb;
+    --purple-500: #7a2eae;
+    --purple-600: #5c0f8c;
+    --purple-700: #4c0c74;
+    --purple-800: #3a0959;
+    --purple-900: #280640;
+    --navy-900: #041e42;
+    --navy-800: #0a1f3f;
+    --navy-700: #152a4d;
+    --navy-600: #23375e;
+    --orange-600: #ff5200;
+    --orange-500: #ff6a21;
+    --orange-400: #ff8547;
+    --orange-100: #ffe7da;
+    --teal-600: #0f9b80;
+    --teal-500: #159d83;
+    --teal-400: #3cbfae;
+    --teal-300: #7fd3c5;
+    --teal-100: #d9f2ec;
+    --red-600: #cf2f2f;
+    --red-500: #e0463f;
+    --red-100: #fbe2e0;
+    --amber-500: #d98a0b;
+    --amber-100: #fcefcf;
+    --blue-500: #2563c9;
+    --blue-100: #dbe7fb;
+
+    /* radii / shadow */
+    --r-xs: 4px;
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+    --sh-sm: 0 1px 2px rgba(11, 22, 40, 0.06), 0 1px 1px rgba(11, 22, 40, 0.04);
+    --sh-md: 0 2px 6px rgba(11, 22, 40, 0.08), 0 1px 2px rgba(11, 22, 40, 0.05);
+    --sh-lg:
+        0 12px 32px -8px rgba(11, 22, 40, 0.22),
+        0 4px 10px -4px rgba(11, 22, 40, 0.12);
+    --sh-pop: 0 8px 28px -6px rgba(11, 22, 40, 0.28);
+
+    /* fonts */
+    --font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --sidebar-w: 248px;
+
+    /* semantic — light */
+    --bg: #eef0f5;
+    --surface: #ffffff;
+    --surface-2: #f7f8fb;
+    --surface-3: #eff1f6;
+    --border: #e2e6ee;
+    --border-2: #d2d8e4;
+    --text: #141b2b;
+    --text-2: #586275;
+    --text-3: #8b94a7;
+    --primary: #6a18a0;
+    --primary-strong: #5c0f8c;
+    --primary-contrast: #ffffff;
+    --primary-soft: #f3ebfa;
+    --primary-soft-2: #e7d7f4;
+    --ring: rgba(106, 24, 160, 0.3);
+    --code-bg: #faf8fd;
+    --code-text: #3a0959;
+    --track: #e8ebf1;
+
+    /* remap shadcn semantic tokens so shadcn atoms adopt Milaha colors */
+    --background: var(--bg);
+    --foreground: var(--text);
+    --card: var(--surface);
+    --card-foreground: var(--text);
+    --popover: var(--surface);
+    --popover-foreground: var(--text);
+    --primary-foreground: var(--primary-contrast);
+    --secondary: var(--surface-2);
+    --secondary-foreground: var(--text);
+    --muted: var(--surface-3);
+    --muted-foreground: var(--text-3);
+    --accent: var(--surface-3);
+    --accent-foreground: var(--text);
+    --destructive: var(--red-500);
+    --input: var(--border-2);
+    --radius: 0.75rem;
+
+    font-family: var(--font);
+    color: var(--text);
+}
+
+.dark .maac-theme {
+    /* semantic — dark */
+    --bg: #070e1b;
+    --surface: #0f1b30;
+    --surface-2: #0c1728;
+    --surface-3: #16243d;
+    --border: #1e2d47;
+    --border-2: #27395a;
+    --text: #e7ecf5;
+    --text-2: #94a3bd;
+    --text-3: #65748f;
+    --primary: #b07cd8;
+    --primary-strong: #c79ae6;
+    --primary-contrast: #1a0830;
+    --primary-soft: #241036;
+    --primary-soft-2: #33174d;
+    --ring: rgba(176, 124, 216, 0.35);
+    --code-bg: #0a1320;
+    --code-text: #d9c4ee;
+    --track: #1a2840;
+    --sh-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --sh-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --sh-lg: 0 16px 38px -10px rgba(0, 0, 0, 0.6);
+    --sh-pop: 0 10px 32px -6px rgba(0, 0, 0, 0.65);
+
+    /* Dark-mode tint refinement.
+       The `-100` tints double as (a) badge backgrounds (paired with a strong
+       `-500/-600` foreground) and (b) callout-card backgrounds (paired with
+       --text/--text-2). In dark mode the light tints washed out callout text,
+       so darken the tints to translucent dark fills and brighten the matching
+       accent foregrounds — keeping badges legible and callout text readable. */
+    --purple-100: #271542;
+    --teal-100: #0f2d29;
+    --orange-100: #3a2417;
+    --amber-100: #332815;
+    --red-100: #351d1d;
+    --blue-100: #15243f;
+
+    --teal-600: #4fd0bd;
+    --amber-500: #ecb44e;
+    --red-600: #f1736b;
+    --blue-500: #6ea6ec;
+}
+
+/* ---- MAAC interaction + animation CSS (ported from prototype) ---- */
+.maac-theme .maac-btn:hover:not(:disabled) {
+    filter: brightness(0.97);
+}
+.dark .maac-theme .maac-btn:hover:not(:disabled) {
+    filter: brightness(1.12);
+}
+.maac-theme .maac-btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+}
+.maac-theme .maac-card-hover:hover {
+    box-shadow: var(--sh-md);
+    border-color: var(--border-2);
+    transform: translateY(-1px);
+}
+.maac-theme .maac-row:hover {
+    background: var(--surface-2);
+}
+.maac-theme .maac-link {
+    cursor: pointer;
+    transition: color 0.12s;
+}
+.maac-theme .maac-link:hover {
+    color: var(--primary) !important;
+    text-decoration: none;
+}
+.maac-theme .maac-input:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px var(--ring);
+}
+.maac-theme .maac-iconbtn:hover {
+    background: var(--surface-3);
+    color: var(--text) !important;
+}
+.maac-theme .maac-copybtn:hover {
+    background: var(--surface-3);
+}
+.maac-theme .maac-hbar:hover {
+    opacity: 0.85;
+}
+.maac-navitem {
+    transition:
+        background 0.12s,
+        color 0.12s;
+}
+.maac-navitem:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+}
+.maac-tip {
+    position: relative;
+}
+.maac-vbar {
+    position: relative;
+}
+.maac-tip:hover::after,
+.maac-vbar:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--navy-900);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 5px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    z-index: 50;
+    pointer-events: none;
+    box-shadow: var(--sh-pop);
+    font-family: var(--font);
+}
+.maac-tip:hover::after {
+    font-size: 11.5px;
+    max-width: 260px;
+    white-space: normal;
+    width: max-content;
+    text-align: left;
+    line-height: 1.4;
+}
+.maac-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+.maac-theme input::placeholder,
+.maac-theme textarea::placeholder {
+    color: var(--text-3);
+}
+
+@keyframes maacFadeUp {
+    from {
+        transform: translateY(7px);
+    }
+    to {
+        transform: none;
+    }
+}
+@keyframes maacFadeIn {
+    from {
+        opacity: 0.001;
+    }
+    to {
+        opacity: 1;
+    }
+}
+@keyframes maacPopIn {
+    from {
+        transform: translateY(8px) scale(0.985);
+    }
+    to {
+        transform: none;
+    }
+}
+@keyframes maacPulseDot {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
+}
+@keyframes maacRouteIn {
+    from {
+        opacity: 0.4;
+    }
+    to {
+        opacity: 1;
+    }
+}
+.maac-theme .route-anim {
+    animation: maacRouteIn 0.25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+    .maac-theme * {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
     }
 }
