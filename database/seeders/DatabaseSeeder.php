@@ -15,11 +15,12 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
+        // Demo account for the MAAC console (Phase 1). The factory provisions a
+        // personal team and sets it as the current team, satisfying the
+        // team-scoped console routes. Password: "password".
         User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+            'name' => 'Layla Hassan',
+            'email' => 'demo@milaha.com',
         ]);
     }
 }
