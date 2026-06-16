@@ -25,12 +25,7 @@ class ToolContractController extends Controller
     {
         Gate::authorize('create', ToolContract::class);
 
-        $team = $request->user()->currentTeam;
-
-        if ($team === null) {
-            abort(403);
-        }
-
+        $team = $request->user()->currentTeam()->firstOrFail();
         $validated = $request->validated();
         $implementationStatus = $request->string('execution_mode')->value() === 'client'
             ? ImplStatus::Required->value

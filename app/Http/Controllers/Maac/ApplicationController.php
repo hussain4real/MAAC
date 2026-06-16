@@ -25,12 +25,7 @@ class ApplicationController extends Controller
     {
         Gate::authorize('create', Application::class);
 
-        $team = $request->user()->currentTeam;
-
-        if ($team === null) {
-            abort(403);
-        }
-
+        $team = $request->user()->currentTeam()->firstOrFail();
         $validated = $request->validated();
 
         $application = Application::create([

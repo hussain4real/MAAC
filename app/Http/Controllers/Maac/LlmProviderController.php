@@ -25,12 +25,7 @@ class LlmProviderController extends Controller
     {
         Gate::authorize('create', LlmProvider::class);
 
-        $team = $request->user()->currentTeam;
-
-        if ($team === null) {
-            abort(403);
-        }
-
+        $team = $request->user()->currentTeam()->firstOrFail();
         $validated = $request->validated();
 
         $llmProvider = LlmProvider::create([

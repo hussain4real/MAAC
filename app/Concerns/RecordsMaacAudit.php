@@ -21,19 +21,17 @@ trait RecordsMaacAudit
         $user = $request->user();
         $team = $user->currentTeam;
 
-        if ($team === null) {
-            return;
+        if ($team !== null) {
+            AuditEvent::create([
+                'team_id' => $team->id,
+                'actor_user_id' => $user->id,
+                'actor_label' => $user->name,
+                'action' => $action,
+                'auditable_type' => $auditable::class,
+                'auditable_id' => (string) $auditable->getKey(),
+                'metadata' => $metadata === [] ? null : $metadata,
+                'ip_address' => $request->ip(),
+            ]);
         }
-
-        AuditEvent::create([
-            'team_id' => $team->id,
-            'actor_user_id' => $user->id,
-            'actor_label' => $user->name,
-            'action' => $action,
-            'auditable_type' => $auditable::class,
-            'auditable_id' => (string) $auditable->getKey(),
-            'metadata' => $metadata === [] ? null : $metadata,
-            'ip_address' => $request->ip(),
-        ]);
     }
 }
