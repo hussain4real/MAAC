@@ -20,6 +20,7 @@ use App\Models\ToolAssignment;
 use App\Models\ToolContract;
 use App\Models\User;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
@@ -31,6 +32,8 @@ use Illuminate\Support\Carbon;
  */
 class MaacDemoSeeder extends Seeder
 {
+    use WithoutModelEvents;
+
     /**
      * Seed the MAAC platform data for the demo team.
      */

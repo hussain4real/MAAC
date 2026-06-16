@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\RecordsAuditEvents;
 use App\Enums\AgentStatus;
 use Database\Factories\AgentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -47,7 +48,7 @@ use Illuminate\Support\Carbon;
 class Agent extends Model
 {
     /** @use HasFactory<AgentFactory> */
-    use HasFactory, HasUuids, SoftDeletes;
+    use HasFactory, HasUuids, RecordsAuditEvents, SoftDeletes;
 
     /**
      * Get the project the agent belongs to.
@@ -124,6 +125,14 @@ class Agent extends Model
     public function getRouteKeyName(): string
     {
         return 'slug';
+    }
+
+    /**
+     * Resolve the team this agent is audited under.
+     */
+    protected function auditTeam(): ?Team
+    {
+        return $this->project->application->team;
     }
 
     /**

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Maac;
 
-use App\Concerns\RecordsMaacAudit;
 use App\Enums\ImplStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Maac\StoreToolContractRequest;
@@ -16,8 +15,6 @@ use Inertia\Inertia;
 
 class ToolContractController extends Controller
 {
-    use RecordsMaacAudit;
-
     /**
      * Create a new tool contract.
      */
@@ -31,7 +28,7 @@ class ToolContractController extends Controller
             ? ImplStatus::Required->value
             : ImplStatus::Ready->value;
 
-        $tool = ToolContract::create([
+        ToolContract::create([
             ...$validated,
             'team_id' => $team->id,
             'slug' => Slug::unique('tool_contracts', $request->string('name')->value()),
@@ -40,8 +37,6 @@ class ToolContractController extends Controller
             'version' => $validated['version'] ?? '1.0.0',
             'requires_approval' => $validated['requires_approval'] ?? false,
         ]);
-
-        $this->recordAudit($request, 'tool.created', $tool, ['name' => $tool->name]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Tool contract created.']);
 
@@ -57,8 +52,6 @@ class ToolContractController extends Controller
 
         $tool->update($request->validated());
 
-        $this->recordAudit($request, 'tool.updated', $tool);
-
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Tool contract updated.']);
 
         return back();
@@ -72,8 +65,6 @@ class ToolContractController extends Controller
         Gate::authorize('delete', $tool);
 
         $tool->delete();
-
-        $this->recordAudit($request, 'tool.deleted', $tool);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Tool contract deleted.']);
 

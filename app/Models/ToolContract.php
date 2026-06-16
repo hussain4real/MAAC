@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\RecordsAuditEvents;
 use App\Enums\ExecMode;
 use App\Enums\ImplStatus;
 use App\Enums\Sensitivity;
@@ -50,7 +51,7 @@ use Illuminate\Support\Carbon;
 class ToolContract extends Model
 {
     /** @use HasFactory<ToolContractFactory> */
-    use HasFactory, HasUuids, SoftDeletes;
+    use HasFactory, HasUuids, RecordsAuditEvents, SoftDeletes;
 
     /**
      * Get the team that owns the tool contract.
@@ -127,6 +128,14 @@ class ToolContract extends Model
     public function getRouteKeyName(): string
     {
         return 'slug';
+    }
+
+    /**
+     * Resolve the team this tool contract is audited under.
+     */
+    protected function auditTeam(): ?Team
+    {
+        return $this->team;
     }
 
     /**

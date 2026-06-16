@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Maac;
 
-use App\Concerns\RecordsMaacAudit;
 use App\Enums\ProjectStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Maac\StoreProjectRequest;
@@ -16,8 +15,6 @@ use Inertia\Inertia;
 
 class ProjectController extends Controller
 {
-    use RecordsMaacAudit;
-
     /**
      * Create a new project under an application.
      */
@@ -37,8 +34,6 @@ class ProjectController extends Controller
             $project->llmProviders()->sync($request->collect('llm_provider_ids')->all());
         }
 
-        $this->recordAudit($request, 'project.created', $project, ['name' => $project->name]);
-
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Project created.']);
 
         return back();
@@ -57,8 +52,6 @@ class ProjectController extends Controller
             $project->llmProviders()->sync($request->collect('llm_provider_ids')->all());
         }
 
-        $this->recordAudit($request, 'project.updated', $project);
-
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Project updated.']);
 
         return back();
@@ -72,8 +65,6 @@ class ProjectController extends Controller
         Gate::authorize('delete', $project);
 
         $project->delete();
-
-        $this->recordAudit($request, 'project.deleted', $project);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Project archived.']);
 

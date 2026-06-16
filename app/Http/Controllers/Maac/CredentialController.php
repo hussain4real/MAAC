@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Maac;
 
-use App\Concerns\RecordsMaacAudit;
 use App\Enums\CredentialStatus;
 use App\Enums\Environment;
 use App\Http\Controllers\Controller;
@@ -17,8 +16,6 @@ use Inertia\Inertia;
 
 class CredentialController extends Controller
 {
-    use RecordsMaacAudit;
-
     /**
      * Generate a new credential for an application environment. The plaintext
      * secret is flashed once and never stored.
@@ -41,8 +38,6 @@ class CredentialController extends Controller
         $credential->fillSecret($plainSecret);
         $credential->save();
 
-        $this->recordAudit($request, 'credential.created', $credential, ['environment' => $environment->value]);
-
         $this->flashSecret($credential, $plainSecret);
 
         return back();
@@ -62,8 +57,6 @@ class CredentialController extends Controller
         $credential->revoked_at = null;
         $credential->save();
 
-        $this->recordAudit($request, 'credential.rotated', $credential);
-
         $this->flashSecret($credential, $plainSecret);
 
         return back();
@@ -80,8 +73,6 @@ class CredentialController extends Controller
             'status' => CredentialStatus::Revoked->value,
             'revoked_at' => Carbon::now(),
         ]);
-
-        $this->recordAudit($request, 'credential.revoked', $credential);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Credential revoked.']);
 

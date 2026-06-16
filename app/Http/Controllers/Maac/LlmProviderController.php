@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Maac;
 
-use App\Concerns\RecordsMaacAudit;
 use App\Enums\LlmStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Maac\StoreLlmProviderRequest;
@@ -16,8 +15,6 @@ use Inertia\Inertia;
 
 class LlmProviderController extends Controller
 {
-    use RecordsMaacAudit;
-
     /**
      * Add a model to the approved LLM catalog.
      */
@@ -28,14 +25,12 @@ class LlmProviderController extends Controller
         $team = $request->user()->currentTeam()->firstOrFail();
         $validated = $request->validated();
 
-        $llmProvider = LlmProvider::create([
+        LlmProvider::create([
             ...$validated,
             'team_id' => $team->id,
             'slug' => Slug::unique('llm_providers', $request->string('code')->value()),
             'status' => $validated['status'] ?? LlmStatus::Approved->value,
         ]);
-
-        $this->recordAudit($request, 'model.added', $llmProvider, ['code' => $llmProvider->code]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Model added to the catalog.']);
 
@@ -51,8 +46,6 @@ class LlmProviderController extends Controller
 
         $llmProvider->update($request->validated());
 
-        $this->recordAudit($request, 'model.updated', $llmProvider);
-
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Model updated.']);
 
         return back();
@@ -66,8 +59,6 @@ class LlmProviderController extends Controller
         Gate::authorize('delete', $llmProvider);
 
         $llmProvider->delete();
-
-        $this->recordAudit($request, 'model.removed', $llmProvider);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Model removed.']);
 

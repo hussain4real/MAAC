@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\RecordsAuditEvents;
 use App\Enums\CredentialStatus;
 use App\Enums\Environment;
 use Database\Factories\CredentialFactory;
@@ -38,7 +39,7 @@ use Illuminate\Support\Str;
 class Credential extends Model
 {
     /** @use HasFactory<CredentialFactory> */
-    use HasFactory, HasUuids;
+    use HasFactory, HasUuids, RecordsAuditEvents;
 
     /**
      * Get the application the credential belongs to.
@@ -92,6 +93,14 @@ class Credential extends Model
     public function isUsable(): bool
     {
         return $this->status->isUsable();
+    }
+
+    /**
+     * Resolve the team this credential is audited under.
+     */
+    protected function auditTeam(): ?Team
+    {
+        return $this->application->team;
     }
 
     /**

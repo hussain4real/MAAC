@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\RecordsAuditEvents;
 use App\Enums\LlmStatus;
 use App\Enums\Sensitivity;
 use Database\Factories\LlmProviderFactory;
@@ -41,7 +42,7 @@ use Illuminate\Support\Carbon;
 class LlmProvider extends Model
 {
     /** @use HasFactory<LlmProviderFactory> */
-    use HasFactory, HasUuids;
+    use HasFactory, HasUuids, RecordsAuditEvents;
 
     /**
      * Get the team that owns the model catalog entry.
@@ -79,6 +80,14 @@ class LlmProvider extends Model
     public function getRouteKeyName(): string
     {
         return 'slug';
+    }
+
+    /**
+     * Resolve the team this model is audited under.
+     */
+    protected function auditTeam(): ?Team
+    {
+        return $this->team;
     }
 
     /**

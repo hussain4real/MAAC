@@ -37,7 +37,7 @@ class ApplicationResource extends JsonResource
             'lastConnected' => $this->last_connected_at?->diffForHumans() ?? '—',
             'stack' => $this->stack,
             'desc' => $this->description,
-            'credStatus' => $this->credentialStatus(),
+            'credStatus' => $this->whenLoaded('credentials', fn () => $this->credentialStatus()),
             'region' => $this->region,
             'created' => $this->created_at?->format('j M Y') ?? '',
         ];

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Maac;
 
-use App\Concerns\RecordsMaacAudit;
 use App\Enums\AppStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Maac\StoreApplicationRequest;
@@ -16,8 +15,6 @@ use Inertia\Inertia;
 
 class ApplicationController extends Controller
 {
-    use RecordsMaacAudit;
-
     /**
      * Register a new application for the current team.
      */
@@ -28,14 +25,12 @@ class ApplicationController extends Controller
         $team = $request->user()->currentTeam()->firstOrFail();
         $validated = $request->validated();
 
-        $application = Application::create([
+        Application::create([
             ...$validated,
             'team_id' => $team->id,
             'slug' => Slug::unique('applications', $request->string('code')->value()),
             'status' => $validated['status'] ?? AppStatus::Active->value,
         ]);
-
-        $this->recordAudit($request, 'application.registered', $application, ['name' => $application->name]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Application registered.']);
 
@@ -51,8 +46,6 @@ class ApplicationController extends Controller
 
         $application->update($request->validated());
 
-        $this->recordAudit($request, 'application.updated', $application);
-
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Application updated.']);
 
         return back();
@@ -66,8 +59,6 @@ class ApplicationController extends Controller
         Gate::authorize('delete', $application);
 
         $application->delete();
-
-        $this->recordAudit($request, 'application.deleted', $application);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Application archived.']);
 

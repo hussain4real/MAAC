@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\RecordsAuditEvents;
 use App\Enums\AppStatus;
 use App\Enums\Environment;
 use Database\Factories\ApplicationFactory;
@@ -50,7 +51,7 @@ use Illuminate\Support\Carbon;
 class Application extends Model
 {
     /** @use HasFactory<ApplicationFactory> */
-    use HasFactory, HasUuids, SoftDeletes;
+    use HasFactory, HasUuids, RecordsAuditEvents, SoftDeletes;
 
     /**
      * Get the team that owns the application.
@@ -139,6 +140,14 @@ class Application extends Model
     public function getRouteKeyName(): string
     {
         return 'slug';
+    }
+
+    /**
+     * Resolve the team this application is audited under.
+     */
+    protected function auditTeam(): ?Team
+    {
+        return $this->team;
     }
 
     /**

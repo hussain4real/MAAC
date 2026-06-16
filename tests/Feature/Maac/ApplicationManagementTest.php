@@ -100,6 +100,7 @@ test('administrative changes record an audit event', function () {
 
     $this->assertDatabaseHas('audit_events', [
         'team_id' => $team->id,
-        'action' => 'application.registered',
+        'action' => 'application.created',
+        'auditable_type' => Application::class,
     ]);
 });

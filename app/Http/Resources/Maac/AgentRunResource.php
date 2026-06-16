@@ -23,12 +23,12 @@ class AgentRunResource extends JsonResource
     {
         return [
             'id' => $this->slug,
-            'agentId' => $this->agent->slug,
-            'appId' => $this->application->slug,
-            'projectId' => $this->project->slug,
+            'agentId' => $this->whenLoaded('agent', fn () => $this->agent->slug),
+            'appId' => $this->whenLoaded('application', fn () => $this->application->slug),
+            'projectId' => $this->whenLoaded('project', fn () => $this->project->slug),
             'caller' => $this->caller,
             'status' => $this->status->value,
-            'llm' => $this->llmProvider?->slug,
+            'llm' => $this->whenLoaded('llmProvider', fn () => $this->llmProvider?->slug),
             'tools' => $this->tools ?? [],
             'tokensIn' => $this->tokens_in,
             'tokensOut' => $this->tokens_out,

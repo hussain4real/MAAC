@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\RecordsAuditEvents;
 use App\Enums\Environment;
 use App\Enums\ProjectStatus;
 use Database\Factories\ProjectFactory;
@@ -42,7 +43,7 @@ use Illuminate\Support\Carbon;
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
-    use HasFactory, HasUuids, SoftDeletes;
+    use HasFactory, HasUuids, RecordsAuditEvents, SoftDeletes;
 
     /**
      * Get the application the project belongs to.
@@ -103,6 +104,14 @@ class Project extends Model
     public function getRouteKeyName(): string
     {
         return 'slug';
+    }
+
+    /**
+     * Resolve the team this project is audited under.
+     */
+    protected function auditTeam(): ?Team
+    {
+        return $this->application->team;
     }
 
     /**

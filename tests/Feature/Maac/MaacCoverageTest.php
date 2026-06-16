@@ -66,7 +66,7 @@ test('MAAC models expose their relationships and accessors', function () {
     expect($team->applications)->toHaveCount(1)
         ->and($team->llmProviders)->toHaveCount(1)
         ->and($team->toolContracts)->toHaveCount(1)
-        ->and($team->auditEvents)->toHaveCount(1)
+        ->and($team->auditEvents)->not->toBeEmpty()
         ->and($app->team->id)->toBe($team->id)
         ->and($app->projects)->toHaveCount(1)
         ->and($app->credentials)->toHaveCount(1)

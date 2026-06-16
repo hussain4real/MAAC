@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Maac;
 
-use App\Concerns\RecordsMaacAudit;
 use App\Enums\AgentStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Maac\StoreAgentRequest;
@@ -19,8 +18,6 @@ use Inertia\Inertia;
 
 class AgentController extends Controller
 {
-    use RecordsMaacAudit;
-
     /**
      * Create a new draft agent under a project, with an initial version.
      */
@@ -52,8 +49,6 @@ class AgentController extends Controller
 
         $this->syncTools($agent, $request);
 
-        $this->recordAudit($request, 'agent.created', $agent, ['name' => $agent->name]);
-
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Agent created.']);
 
         return back();
@@ -72,8 +67,6 @@ class AgentController extends Controller
             ToolAssignment::query()->where('agent_id', $agent->id)->delete();
             $this->syncTools($agent, $request);
         }
-
-        $this->recordAudit($request, 'agent.updated', $agent);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Agent updated.']);
 
@@ -109,8 +102,6 @@ class AgentController extends Controller
             'current_version_id' => $version->id,
         ]);
 
-        $this->recordAudit($request, 'agent.published', $agent, ['version' => $nextVersion]);
-
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Agent published.']);
 
         return back();
@@ -124,8 +115,6 @@ class AgentController extends Controller
         Gate::authorize('delete', $agent);
 
         $agent->delete();
-
-        $this->recordAudit($request, 'agent.deleted', $agent);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Agent deleted.']);
 
