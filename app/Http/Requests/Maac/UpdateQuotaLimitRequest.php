@@ -18,11 +18,30 @@ class UpdateQuotaLimitRequest extends FormRequest
     {
         return [
             'scope' => ['sometimes', Rule::enum(QuotaScope::class)],
-            'subject_id' => ['nullable', 'string', 'max:255'],
+            // A non-platform scope matches by subject UUID, so when one is
+            // submitted a subject must come with it (see QuotaGuard::matches).
+            'subject_id' => [
+                'nullable',
+                Rule::requiredIf(fn (): bool => QuotaScope::tryFrom((string) $this->input('scope'))?->requiresSubject() ?? false),
+                'string',
+                'max:255',
+            ],
             'environment' => ['nullable', Rule::enum(Environment::class)],
             'max_runs_per_day' => ['nullable', 'integer', 'min:1'],
             'max_tokens_per_day' => ['nullable', 'integer', 'min:1'],
             'enabled' => ['sometimes', 'boolean'],
+        ];
+    }
+
+    /**
+     * Get custom validation messages.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'subject_id.required' => 'Select a subject for non-platform quota scopes.',
         ];
     }
 }

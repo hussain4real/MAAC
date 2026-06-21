@@ -1,8 +1,9 @@
 /* ============================================================
    MAAC — Create Agent Wizard
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { store as storeAgent } from '@/actions/App/Http/Controllers/Maac/AgentController';
 import {
     Badge,
     Btn,
@@ -18,13 +19,24 @@ import {
     Toggle,
 } from '@/components/maac/ui';
 import type { Application, Llm, Project, Tool } from '@/maac/data';
+import { FieldError, useCurrentTeam } from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
 
+/** Slugify an agent name into a runtime-safe identifier. */
+function slugifyAgent(value: string): string {
+    return value
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
 /* ── Wizard data shape ─────────────────────────────────────── */
 interface AgentDraft {
     name: string;
+    agentSlug: string;
     desc: string;
     app: string;
     project: string;
@@ -44,6 +56,7 @@ type SetFn = <K extends keyof AgentDraft>(k: K, v: AgentDraft[K]) => void;
 interface StepProps {
     data: AgentDraft;
     set: SetFn;
+    errors?: Record<string, string>;
 }
 
 interface StepReviewProps {
@@ -64,11 +77,22 @@ function StepHeader({ title, sub }: { title: string; sub: string }) {
 }
 
 /* ── StepBasic ─────────────────────────────────────────────── */
-function StepBasic({ data, set }: StepProps) {
+function StepBasic({ data, set, errors }: StepProps) {
     const { scope } = useMaacNav();
     const MAAC = useMaacData();
     const apps: Application[] = scope.apps.length ? scope.apps : MAAC.apps;
     const projs: Project[] = scope.projects.filter((p) => p.appId === data.app);
+
+    // A project restricts which approved models its agents may use; drop the
+    // selected model when it falls outside the newly chosen project's list.
+    const chooseProject = (projectSlug: string) => {
+        set('project', projectSlug);
+        const allowed = MAAC.projectById(projectSlug)?.llms ?? [];
+
+        if (allowed.length > 0 && !allowed.includes(data.llm)) {
+            set('llm', allowed[0]);
+        }
+    };
 
     return (
         <div>
@@ -90,6 +114,21 @@ function StepBasic({ data, set }: StepProps) {
                         onChange={(e) => set('name', e.target.value)}
                         placeholder="e.g. Operations Summary Agent"
                     />
+                    <FieldError error={errors?.name} />
+                </Field>
+                <Field
+                    label="Agent slug"
+                    required
+                    hint="Runtime API identifier — letters, numbers, and dashes."
+                >
+                    <Input
+                        value={data.agentSlug}
+                        onChange={(e) => set('agentSlug', e.target.value)}
+                        placeholder={
+                            slugifyAgent(data.name) || 'operations-summary'
+                        }
+                    />
+                    <FieldError error={errors?.agent_slug} />
                 </Field>
                 <Field
                     label="Short description"
@@ -121,7 +160,7 @@ function StepBasic({ data, set }: StepProps) {
                     <Field label="Project" required>
                         <Select
                             value={data.project}
-                            onChange={(v) => set('project', v)}
+                            onChange={chooseProject}
                             options={(projs.length
                                 ? projs
                                 : MAAC.projectsByApp(data.app)
@@ -223,13 +262,27 @@ function StepPrompt({ data, set }: StepProps) {
 /* ── StepLLM ───────────────────────────────────────────────── */
 function StepLLM({ data, set }: StepProps) {
     const MAAC = useMaacData();
+    // Restrict to the models the selected project allows (empty = no
+    // restriction), so an agent can't be created with a disallowed model.
+    const allowed = MAAC.projectById(data.project)?.llms ?? [];
+    const models = MAAC.llms.filter(
+        (l: Llm) =>
+            l.status === 'Approved' &&
+            (allowed.length === 0 || allowed.includes(l.id)),
+    );
 
     return (
         <div>
             <StepHeader
                 title="Select LLM"
-                sub="Choose from the company-approved model catalog. Availability may be restricted by project."
+                sub="Choose from the approved models this project allows."
             />
+            {models.length === 0 && (
+                <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
+                    This project has no approved models available. Add one to
+                    the project's allowed models first.
+                </div>
+            )}
             <div
                 style={{
                     display: 'grid',
@@ -237,118 +290,116 @@ function StepLLM({ data, set }: StepProps) {
                     gap: 12,
                 }}
             >
-                {MAAC.llms
-                    .filter((l: Llm) => l.status === 'Approved')
-                    .map((l: Llm) => {
-                        const on = data.llm === l.id;
+                {models.map((l: Llm) => {
+                    const on = data.llm === l.id;
 
-                        return (
-                            <div
-                                key={l.id}
-                                onClick={() => set('llm', l.id)}
-                                style={{
-                                    cursor: 'pointer',
-                                    padding: '14px 15px',
-                                    borderRadius: 'var(--r-lg)',
-                                    border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
-                                    background: on
-                                        ? 'var(--primary-soft)'
-                                        : 'var(--surface)',
-                                    transition: 'all .12s',
-                                    position: 'relative',
-                                }}
-                            >
-                                {on && (
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            top: 12,
-                                            right: 12,
-                                            width: 20,
-                                            height: 20,
-                                            borderRadius: 999,
-                                            background: 'var(--primary)',
-                                            color: '#fff',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                        }}
-                                    >
-                                        <Icon
-                                            name="check"
-                                            size={13}
-                                            strokeWidth={3}
-                                        />
-                                    </span>
-                                )}
-                                <div
+                    return (
+                        <div
+                            key={l.id}
+                            onClick={() => set('llm', l.id)}
+                            style={{
+                                cursor: 'pointer',
+                                padding: '14px 15px',
+                                borderRadius: 'var(--r-lg)',
+                                border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
+                                background: on
+                                    ? 'var(--primary-soft)'
+                                    : 'var(--surface)',
+                                transition: 'all .12s',
+                                position: 'relative',
+                            }}
+                        >
+                            {on && (
+                                <span
                                     style={{
+                                        position: 'absolute',
+                                        top: 12,
+                                        right: 12,
+                                        width: 20,
+                                        height: 20,
+                                        borderRadius: 999,
+                                        background: 'var(--primary)',
+                                        color: '#fff',
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: 9,
-                                        marginBottom: 8,
+                                        justifyContent: 'center',
                                     }}
                                 >
-                                    <span
+                                    <Icon
+                                        name="check"
+                                        size={13}
+                                        strokeWidth={3}
+                                    />
+                                </span>
+                            )}
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 9,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <span
+                                    style={{
+                                        width: 30,
+                                        height: 30,
+                                        borderRadius: 8,
+                                        background: 'var(--navy-900)',
+                                        color: '#fff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                    }}
+                                >
+                                    <Icon name="llm" size={16} />
+                                </span>
+                                <div>
+                                    <div
                                         style={{
-                                            width: 30,
-                                            height: 30,
-                                            borderRadius: 8,
-                                            background: 'var(--navy-900)',
-                                            color: '#fff',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
+                                            fontSize: 13.5,
+                                            fontWeight: 700,
                                         }}
                                     >
-                                        <Icon name="llm" size={16} />
-                                    </span>
-                                    <div>
-                                        <div
-                                            style={{
-                                                fontSize: 13.5,
-                                                fontWeight: 700,
-                                            }}
-                                        >
-                                            {l.name}
-                                        </div>
-                                        <div
-                                            style={{
-                                                fontSize: 11,
-                                                color: 'var(--text-3)',
-                                            }}
-                                        >
-                                            {l.provider}
-                                        </div>
+                                        {l.name}
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: 11,
+                                            color: 'var(--text-3)',
+                                        }}
+                                    >
+                                        {l.provider}
                                     </div>
                                 </div>
-                                <div
-                                    style={{
-                                        fontSize: 12,
-                                        color: 'var(--text-2)',
-                                        lineHeight: 1.45,
-                                        marginBottom: 10,
-                                        minHeight: 34,
-                                    }}
-                                >
-                                    {l.note}
-                                </div>
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        flexWrap: 'wrap',
-                                        gap: 6,
-                                    }}
-                                >
-                                    <Badge tone="neutral">Ctx {l.ctx}</Badge>
-                                    <Badge tone="neutral">
-                                        ${l.inCost}/{l.outCost} per 1M
-                                    </Badge>
-                                    <SensBadge level={l.sensitivity} />
-                                </div>
                             </div>
-                        );
-                    })}
+                            <div
+                                style={{
+                                    fontSize: 12,
+                                    color: 'var(--text-2)',
+                                    lineHeight: 1.45,
+                                    marginBottom: 10,
+                                    minHeight: 34,
+                                }}
+                            >
+                                {l.note}
+                            </div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: 6,
+                                }}
+                            >
+                                <Badge tone="neutral">Ctx {l.ctx}</Badge>
+                                <Badge tone="neutral">
+                                    ${l.inCost}/{l.outCost} per 1M
+                                </Badge>
+                                <SensBadge level={l.sensitivity} />
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -791,9 +842,14 @@ function StepReview({ data, go }: StepReviewProps) {
 /* ── CreateAgent (page) ────────────────────────────────────── */
 export default function CreateAgent() {
     const { go, back } = useMaacNav();
+    const MAAC = useMaacData();
+    const team = useCurrentTeam();
     const [step, setStep] = useState(0);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [processing, setProcessing] = useState(false);
     const [data, setData] = useState<AgentDraft>({
         name: '',
+        agentSlug: '',
         desc: '',
         app: 'MOP',
         project: 'prj_mop_ops',
@@ -807,6 +863,51 @@ export default function CreateAgent() {
         masking: true,
     });
     const set: SetFn = (k, v) => setData((d) => ({ ...d, [k]: v }));
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        // Enforce the project's allowed-model list before posting (the wizard
+        // also filters the LLM step, but never trust stale state).
+        const allowedModels = MAAC.projectById(data.project)?.llms ?? [];
+
+        if (allowedModels.length > 0 && !allowedModels.includes(data.llm)) {
+            setErrors({
+                llm_provider_id:
+                    'The selected model is not in this project’s allowed list.',
+            });
+            setStep(2);
+
+            return;
+        }
+
+        router.post(
+            storeAgent([team.slug]).url,
+            {
+                project_id: MAAC.projectById(data.project)?.uuid ?? '',
+                llm_provider_id: MAAC.llmById(data.llm)?.uuid ?? '',
+                name: data.name,
+                agent_slug: data.agentSlug.trim() || slugifyAgent(data.name),
+                system_prompt: data.prompt,
+                temperature: data.temp,
+                max_tokens: data.maxTokens,
+                description: data.desc,
+                status: 'draft',
+                tool_ids: data.tools
+                    .map((slug) => MAAC.toolById(slug)?.uuid)
+                    .filter((id): id is string => Boolean(id)),
+            },
+            {
+                preserveScroll: true,
+                onStart: () => setProcessing(true),
+                onFinish: () => setProcessing(false),
+                onError: (formErrors) => setErrors(formErrors),
+                onSuccess: () => go('agents'),
+            },
+        );
+    };
 
     const steps: { id: string; label: string; icon: string }[] = [
         { id: 'basic', label: 'Basic Information', icon: 'info' },
@@ -942,7 +1043,11 @@ export default function CreateAgent() {
                         >
                             <div style={{ flex: 1 }}>
                                 {step === 0 && (
-                                    <StepBasic data={data} set={set} />
+                                    <StepBasic
+                                        data={data}
+                                        set={set}
+                                        errors={errors}
+                                    />
                                 )}
                                 {step === 1 && (
                                     <StepPrompt data={data} set={set} />
@@ -960,6 +1065,33 @@ export default function CreateAgent() {
                                     <StepReview data={data} go={go} />
                                 )}
                             </div>
+                            {Object.keys(errors).length > 0 && (
+                                <div
+                                    style={{
+                                        marginTop: 16,
+                                        padding: '11px 13px',
+                                        background: 'var(--red-100)',
+                                        border: '1px solid var(--red-500)',
+                                        borderRadius: 'var(--r-md)',
+                                        fontSize: 12,
+                                        color: 'var(--red-600)',
+                                    }}
+                                >
+                                    <b>Please fix the following:</b>
+                                    <ul
+                                        style={{
+                                            margin: '6px 0 0',
+                                            paddingLeft: 18,
+                                        }}
+                                    >
+                                        {Object.values(errors).map(
+                                            (message) => (
+                                                <li key={message}>{message}</li>
+                                            ),
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
                             <div
                                 style={{
                                     display: 'flex',
@@ -1000,9 +1132,10 @@ export default function CreateAgent() {
                                     <Btn
                                         variant="primary"
                                         icon="check2"
-                                        onClick={() => go('agents')}
+                                        disabled={processing}
+                                        onClick={submit}
                                     >
-                                        Create & Publish Agent
+                                        Create Agent
                                     </Btn>
                                 )}
                             </div>

@@ -24,6 +24,7 @@ class ToolContractResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'uuid' => $this->id,
             'id' => $this->slug,
             'name' => $this->name,
             'scope' => $this->scope->label(),

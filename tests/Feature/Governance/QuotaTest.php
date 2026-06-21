@@ -10,7 +10,7 @@ use App\Support\Governance\QuotaGuard;
 
 beforeEach(function () {
     $this->travelTo(now()->startOfDay()->addHours(12));
-    [, $this->team] = ownerAndTeam();
+    [$this->owner, $this->team] = ownerAndTeam();
     $this->agent = maacAgent($this->team);
     $this->application = $this->agent->project->application;
     $this->guard = app(QuotaGuard::class);
@@ -126,4 +126,31 @@ test('a quota scoped to a different subject does not apply', function () {
     $this->guard->assert($this->application, $this->agent, Environment::Production);
 
     expect(true)->toBeTrue();
+});
+
+test('a non-platform quota is rejected without a subject', function () {
+    $this->actingAs($this->owner)
+        ->from(route('governance', ['current_team' => $this->team->slug]))
+        ->post(route('quotas.store', ['current_team' => $this->team->slug]), [
+            'scope' => QuotaScope::Application->value,
+            'max_runs_per_day' => 100,
+        ])
+        ->assertSessionHasErrors('subject_id');
+
+    expect(QuotaLimit::where('scope', QuotaScope::Application)->count())->toBe(0);
+});
+
+test('a non-platform quota persists when given a subject UUID', function () {
+    $this->actingAs($this->owner)
+        ->post(route('quotas.store', ['current_team' => $this->team->slug]), [
+            'scope' => QuotaScope::Application->value,
+            'subject_id' => $this->application->id,
+            'max_runs_per_day' => 100,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(QuotaLimit::query()
+        ->where('scope', QuotaScope::Application)
+        ->where('subject_id', $this->application->id)
+        ->exists())->toBeTrue();
 });

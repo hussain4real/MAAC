@@ -244,6 +244,41 @@ Extend MAAC beyond the MVP while preserving the same governance, data isolation,
 - Remote, connector, and knowledge tools follow the same schema validation, policy, versioning, and trace standards as client-side tools.
 - Evaluation workflows can compare agent behavior across prompts, models, tools, and versions before production rollout.
 
+## Phase 7: Management Console Interactivity (UI ↔ API Wiring)
+
+> **Status: ✅ Complete** — branch `feature/maac-phase-7-console-wiring`. Across Phases 2–5 the console shipped fully tested backend write endpoints, but the React/Inertia screens still rendered their action buttons and forms as demo shells (only the Phase 5 governance Approve/Reject/Review controls were wired). Phase 7 connects the rest end-to-end so the console is genuinely usable — no new business logic, just wiring the existing, feature-tested APIs to the UI (plus the small amount of form/modal UI and the few missing controls needed to drive them). Every create/edit/delete modal uses Inertia's `useForm` (or `router` for one-shot actions) against the existing Wayfinder actions, surfaces server-side validation errors inline, refreshes the shared `maac` prop on success (controllers `Inertia::flash('toast', …)->back()`), and renders success toasts through the existing Sonner flash listener. A new `CredentialSecretGate` (mounted once in the console layout) surfaces the one-time `credentialSecret` flash on generate/rotate. The API resources gained an additive `uuid` (so forms can submit the related-record ids the FormRequests validate) and applications now expose their safe `credentials` records (so the credentials tab can drive rotate/revoke). Verified: 339 Pest tests at **100 % line coverage**; PHPStan level 7, Pint, ESLint, Prettier, `tsc`, and `vite build` all clean. Live browser walkthrough (Chrome, Platform Admin persona) confirmed end-to-end with no console errors: register application + edit; generate / rotate credential with the one-time secret modal; governance settings save (persisted toggles); quota create; request approval; and tool-contract create via the schema editor.
+
+### Goal
+
+Make every MAAC console action button perform its real, governed action end-to-end against the already-tested write endpoints, eliminating the remaining demo-shell controls.
+
+### Checklist
+
+- [x] Applications — wire "Register Application" (`applications.store`), edit / archive (`applications.update` / `applications.destroy`), and suspend/activate status changes.
+- [x] Applications credentials — wire "Generate Secret" (`applications.credentials.store`, one-time secret via the `credentialSecret` flash) and "Revoke access" (`credentials.revoke`).
+- [x] Applications credentials — add the missing "Rotate" control (`credentials.rotate`, re-displays the one-time secret).
+- [x] Projects — wire "New Project", edit, and archive (`projects.store` / `update` / `destroy`).
+- [x] Agents — assemble the Create Agent wizard payload and submit it (`agents.store`), wire "Publish Agent" (`agents.publish`), and edit / delete (`agents.update` / `agents.destroy`).
+- [x] Tools — wire "New Tool" / "Edit" / "Archive" (`tools.store` / `update` / `destroy`) with a schema editor for the input/output contracts.
+- [x] LLM Providers — wire "Add Model" plus edit, delete, and the status toggle (`llm-providers.store` / `update` / `destroy`).
+- [x] Governance — persist the security-policy toggles and retention/quota settings (`governance-settings.update`).
+- [x] Governance — add a "Request approval" trigger (`approvals.store`).
+- [x] Governance — add quota management (a Rate Limits tab with create / edit / delete via `quotas.store` / `update` / `destroy`, reading the `maac.quotas` prop).
+- [x] Surface server-side validation errors inline, render success toasts, show the one-time credential secret on generate/rotate, and refresh list/detail views after every mutation.
+
+### Deliverables
+
+- A fully interactive management console: every action button performs its real create / update / delete / generate / rotate / revoke / publish / request-approval / quota / settings operation.
+- Reusable form helpers (`resources/js/maac/forms.tsx`: enum option lists, `ChipMultiSelect`, `FieldError`, current-team accessor), a shared `ToolFormModal` with a JSON-schema editor, and a global `CredentialSecretGate` for the one-time secret.
+- Additive API surface (`uuid` on the entity resources; safe `credentials` records on `ApplicationResource`) so the React forms can submit the ids the FormRequests validate without changing those requests.
+
+### Acceptance Criteria
+
+- No remaining dead action buttons on the console; each wired control performs its real action verified live in the browser with no console errors.
+- Validation errors display inline, success toasts render, and the one-time credential secret is shown on generate and rotate.
+- List and detail views reflect mutations immediately via the reloaded shared `maac` prop.
+- `composer ci:check` stays green (ESLint, Prettier, `tsc`, PHPStan L7, Pint, Pest) with coverage held at 100 %.
+
 ## Public Interfaces To Preserve
 
 ### Management UI

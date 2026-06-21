@@ -4,20 +4,17 @@
 import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import { StatCard } from '@/components/maac/charts';
+import { ToolFormModal } from '@/components/maac/tool-form';
 import {
     Badge,
     Btn,
     ExecChip,
-    Field,
     ImplBadge,
-    Input,
-    Modal,
     PageHeader,
     SensBadge,
     Select,
     Table,
     Td,
-    Textarea,
     Tr,
     inputStyle,
     scopeBadge,
@@ -255,113 +252,10 @@ export default function Tools() {
                     ))}
                 </Table>
 
-                <Modal
+                <ToolFormModal
                     open={showCreate}
                     onClose={() => setShowCreate(false)}
-                    icon="tools"
-                    title="Create Tool Contract"
-                    sub="Define a tool. Execution mode determines where it runs."
-                    width={600}
-                    footer={
-                        <>
-                            <Btn
-                                variant="ghost"
-                                onClick={() => setShowCreate(false)}
-                            >
-                                Cancel
-                            </Btn>
-                            <Btn
-                                variant="primary"
-                                icon="check"
-                                onClick={() => setShowCreate(false)}
-                            >
-                                Create Contract
-                            </Btn>
-                        </>
-                    }
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 16,
-                        }}
-                    >
-                        <Field
-                            label="Tool name"
-                            required
-                            hint="camelCase identifier the agent will call"
-                        >
-                            <Input
-                                placeholder="getBusinessData"
-                                style={{ fontFamily: 'var(--mono)' }}
-                            />
-                        </Field>
-                        <Field label="Description" required>
-                            <Textarea
-                                rows={2}
-                                placeholder="What does this tool retrieve or do?"
-                            />
-                        </Field>
-                        <div
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: 14,
-                            }}
-                        >
-                            <Field label="Scope" required>
-                                <Select
-                                    value="Project"
-                                    onChange={() => {}}
-                                    options={['Global', 'Project', 'Agent']}
-                                />
-                            </Field>
-                            <Field label="Execution mode" required>
-                                <Select
-                                    value="client"
-                                    onChange={() => {}}
-                                    options={Object.keys(
-                                        MAAC.execModeLabel,
-                                    ).map((k) => ({
-                                        value: k,
-                                        label: MAAC.execModeLabel[k],
-                                    }))}
-                                />
-                            </Field>
-                        </div>
-                        <div
-                            style={{
-                                display: 'flex',
-                                gap: 10,
-                                padding: '11px 13px',
-                                background: 'var(--orange-100)',
-                                borderRadius: 'var(--r-md)',
-                                border: '1px solid var(--orange-400)',
-                            }}
-                        >
-                            <Icon
-                                name="link"
-                                size={17}
-                                style={{
-                                    color: 'var(--orange-600)',
-                                    flexShrink: 0,
-                                }}
-                            />
-                            <div
-                                style={{
-                                    fontSize: 12,
-                                    color: 'var(--text-2)',
-                                    lineHeight: 1.5,
-                                }}
-                            >
-                                Client-side tools are defined here but{' '}
-                                <b>implemented in the owning application</b> via
-                                the SDK. MAAC will generate stubs to copy.
-                            </div>
-                        </div>
-                    </div>
-                </Modal>
+                />
             </div>
         </>
     );

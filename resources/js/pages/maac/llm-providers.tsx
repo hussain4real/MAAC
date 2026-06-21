@@ -1,10 +1,14 @@
 /* ============================================================
    MAAC — LLM Providers
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import {
+    destroy as destroyLlm,
+    store as storeLlm,
+    update as updateLlm,
+} from '@/actions/App/Http/Controllers/Maac/LlmProviderController';
 import { Donut, DonutLegend, StatCard } from '@/components/maac/charts';
-import { SectionHeader } from '@/components/maac/ui';
 import {
     Badge,
     Btn,
@@ -13,21 +17,271 @@ import {
     Input,
     Modal,
     PageHeader,
+    SectionHeader,
     Select,
     SensBadge,
     Table,
     Td,
+    Textarea,
     Toggle,
     Tr,
 } from '@/components/maac/ui';
+import type { Llm } from '@/maac/data';
+import {
+    ChipMultiSelect,
+    ENV_OPTIONS,
+    FieldError,
+    LLM_STATUS_OPTIONS,
+    SENSITIVITY_OPTIONS,
+    toEnumValue,
+    useCurrentTeam,
+} from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacData } from '@/maac/use-data';
 
+function LlmFormModal({
+    llm,
+    open,
+    onClose,
+}: {
+    llm?: Llm;
+    open: boolean;
+    onClose: () => void;
+}) {
+    const team = useCurrentTeam();
+    const isEdit = !!llm;
+    const form = useForm<{
+        name: string;
+        code: string;
+        provider: string;
+        context_window: string;
+        input_cost: number;
+        output_cost: number;
+        sensitivity: string;
+        environments: string[];
+        status: string;
+        note: string;
+    }>({
+        name: llm?.name ?? '',
+        code: llm?.code ?? '',
+        provider: llm?.provider ?? '',
+        context_window: llm?.ctx ?? '',
+        input_cost: llm?.inCost ?? 0,
+        output_cost: llm?.outCost ?? 0,
+        sensitivity: llm ? toEnumValue(llm.sensitivity) : 'internal',
+        environments: llm
+            ? llm.envs.map((e) => toEnumValue(e))
+            : ['development'],
+        status: llm ? toEnumValue(llm.status) : 'approved',
+        note: llm?.note ?? '',
+    });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const toggleEnv = (value: string) => {
+        form.setData(
+            'environments',
+            form.data.environments.includes(value)
+                ? form.data.environments.filter((e) => e !== value)
+                : [...form.data.environments, value],
+        );
+    };
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        if (llm) {
+            form.put(updateLlm([team.slug, llm.id]).url, {
+                preserveScroll: true,
+                onSuccess: () => onClose(),
+            });
+
+            return;
+        }
+
+        form.post(storeLlm([team.slug]).url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                onClose();
+            },
+        });
+    };
+
+    const half = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 };
+
+    return (
+        <Modal
+            open={open}
+            onClose={close}
+            icon="llm"
+            title={isEdit ? 'Edit model' : 'Add Model'}
+            sub="Register an approved model in the company catalog."
+            width={600}
+            footer={
+                <>
+                    <Btn variant="ghost" onClick={close}>
+                        Cancel
+                    </Btn>
+                    <Btn
+                        variant="primary"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        {isEdit ? 'Save changes' : 'Add Model'}
+                    </Btn>
+                </>
+            }
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={half}>
+                    <Field label="Model name" required>
+                        <Input
+                            value={form.data.name}
+                            onChange={(e) =>
+                                form.setData('name', e.target.value)
+                            }
+                            placeholder="GPT-4o"
+                        />
+                        <FieldError error={form.errors.name} />
+                    </Field>
+                    <Field label="Model code" required>
+                        <Input
+                            value={form.data.code}
+                            onChange={(e) =>
+                                form.setData('code', e.target.value)
+                            }
+                            placeholder="azure/gpt-4o"
+                            style={{ fontFamily: 'var(--mono)' }}
+                        />
+                        <FieldError error={form.errors.code} />
+                    </Field>
+                </div>
+                <div style={half}>
+                    <Field label="Provider" required>
+                        <Input
+                            value={form.data.provider}
+                            onChange={(e) =>
+                                form.setData('provider', e.target.value)
+                            }
+                            placeholder="Azure OpenAI"
+                        />
+                        <FieldError error={form.errors.provider} />
+                    </Field>
+                    <Field label="Context window" required>
+                        <Input
+                            value={form.data.context_window}
+                            onChange={(e) =>
+                                form.setData('context_window', e.target.value)
+                            }
+                            placeholder="128K"
+                        />
+                        <FieldError error={form.errors.context_window} />
+                    </Field>
+                </div>
+                <div style={half}>
+                    <Field label="Input cost / 1M" required>
+                        <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={form.data.input_cost}
+                            onChange={(e) =>
+                                form.setData(
+                                    'input_cost',
+                                    parseFloat(e.target.value) || 0,
+                                )
+                            }
+                        />
+                        <FieldError error={form.errors.input_cost} />
+                    </Field>
+                    <Field label="Output cost / 1M" required>
+                        <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={form.data.output_cost}
+                            onChange={(e) =>
+                                form.setData(
+                                    'output_cost',
+                                    parseFloat(e.target.value) || 0,
+                                )
+                            }
+                        />
+                        <FieldError error={form.errors.output_cost} />
+                    </Field>
+                </div>
+                <div style={half}>
+                    <Field label="Sensitivity rating" required>
+                        <Select
+                            value={form.data.sensitivity}
+                            onChange={(v) => form.setData('sensitivity', v)}
+                            options={SENSITIVITY_OPTIONS}
+                        />
+                        <FieldError error={form.errors.sensitivity} />
+                    </Field>
+                    <Field label="Status" required>
+                        <Select
+                            value={form.data.status}
+                            onChange={(v) => form.setData('status', v)}
+                            options={LLM_STATUS_OPTIONS}
+                        />
+                        <FieldError error={form.errors.status} />
+                    </Field>
+                </div>
+                <Field label="Allowed environments" required>
+                    <ChipMultiSelect
+                        options={ENV_OPTIONS}
+                        selected={form.data.environments}
+                        onToggle={toggleEnv}
+                    />
+                    <FieldError error={form.errors.environments} />
+                </Field>
+                <Field label="Notes">
+                    <Textarea
+                        rows={2}
+                        value={form.data.note}
+                        onChange={(e) => form.setData('note', e.target.value)}
+                        placeholder="Usage guidance for this model."
+                    />
+                    <FieldError error={form.errors.note} />
+                </Field>
+            </div>
+        </Modal>
+    );
+}
+
 export default function LLMProviders() {
     const MAAC = useMaacData();
+    const team = useCurrentTeam();
     const [showAdd, setShowAdd] = useState(false);
+    const [editing, setEditing] = useState<Llm | null>(null);
     const approved = MAAC.llms.filter((l) => l.status === 'Approved');
     const totalRuns = MAAC.llms.reduce((s, l) => s + l.runs, 0);
+
+    const setStatus = (llm: Llm, status: string) => {
+        if (team) {
+            router.put(
+                updateLlm([team.slug, llm.id]).url,
+                { status },
+                { preserveScroll: true },
+            );
+        }
+    };
+
+    const remove = (llm: Llm) => {
+        if (team && window.confirm(`Remove ${llm.name} from the catalog?`)) {
+            router.delete(destroyLlm([team.slug, llm.id]).url, {
+                preserveScroll: true,
+            });
+        }
+    };
 
     return (
         <>
@@ -42,7 +296,7 @@ export default function LLMProviders() {
                             icon="plus"
                             onClick={() => setShowAdd(true)}
                         >
-                            Add Provider
+                            Add Model
                         </Btn>
                     }
                 />
@@ -210,11 +464,47 @@ export default function LLMProviders() {
                                         </Badge>
                                     </Td>
                                     <Td align="right">
-                                        <Toggle
-                                            on={l.status === 'Approved'}
-                                            onChange={() => {}}
-                                            size="sm"
-                                        />
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                gap: 6,
+                                                alignItems: 'center',
+                                                justifyContent: 'flex-end',
+                                            }}
+                                        >
+                                            <Toggle
+                                                on={l.status === 'Approved'}
+                                                onChange={(on) =>
+                                                    setStatus(
+                                                        l,
+                                                        on
+                                                            ? 'approved'
+                                                            : 'deprecated',
+                                                    )
+                                                }
+                                                size="sm"
+                                            />
+                                            <Btn
+                                                variant="ghost"
+                                                size="icon"
+                                                icon="edit"
+                                                style={{
+                                                    height: 28,
+                                                    width: 28,
+                                                }}
+                                                onClick={() => setEditing(l)}
+                                            />
+                                            <Btn
+                                                variant="ghost"
+                                                size="icon"
+                                                icon="trash"
+                                                style={{
+                                                    height: 28,
+                                                    width: 28,
+                                                }}
+                                                onClick={() => remove(l)}
+                                            />
+                                        </div>
                                     </Td>
                                 </Tr>
                             ))}
@@ -323,108 +613,18 @@ export default function LLMProviders() {
                     </div>
                 </div>
 
-                <Modal
+                <LlmFormModal
                     open={showAdd}
                     onClose={() => setShowAdd(false)}
-                    icon="llm"
-                    title="Add Model Provider"
-                    sub="Register an approved model in the catalog."
-                    footer={
-                        <>
-                            <Btn
-                                variant="ghost"
-                                onClick={() => setShowAdd(false)}
-                            >
-                                Cancel
-                            </Btn>
-                            <Btn
-                                variant="primary"
-                                icon="check"
-                                onClick={() => setShowAdd(false)}
-                            >
-                                Submit for Approval
-                            </Btn>
-                        </>
-                    }
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 16,
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: 14,
-                            }}
-                        >
-                            <Field label="Provider" required>
-                                <Select
-                                    value="Azure OpenAI"
-                                    onChange={() => {}}
-                                    options={[
-                                        'Azure OpenAI',
-                                        'AWS Bedrock',
-                                        'Google Vertex AI',
-                                        'Milaha On-Prem GPU',
-                                    ]}
-                                />
-                            </Field>
-                            <Field label="Model name" required>
-                                <Input placeholder="GPT-4o" />
-                            </Field>
-                        </div>
-                        <div
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: 14,
-                            }}
-                        >
-                            <Field label="Context window" required>
-                                <Input placeholder="128K" />
-                            </Field>
-                            <Field label="Sensitivity rating" required>
-                                <Select
-                                    value="Restricted"
-                                    onChange={() => {}}
-                                    options={[
-                                        'Public',
-                                        'Internal',
-                                        'Confidential',
-                                        'Restricted',
-                                    ]}
-                                />
-                            </Field>
-                        </div>
-                        <Field label="Allowed environments">
-                            <div style={{ display: 'flex', gap: 6 }}>
-                                {(
-                                    [
-                                        'Production',
-                                        'Staging',
-                                        'Development',
-                                    ] as const
-                                ).map((e) => (
-                                    <Badge
-                                        key={e}
-                                        tone={
-                                            e === 'Development'
-                                                ? 'purple'
-                                                : 'neutral'
-                                        }
-                                        soft
-                                    >
-                                        {e}
-                                    </Badge>
-                                ))}
-                            </div>
-                        </Field>
-                    </div>
-                </Modal>
+                />
+                {editing && (
+                    <LlmFormModal
+                        key={editing.id}
+                        llm={editing}
+                        open
+                        onClose={() => setEditing(null)}
+                    />
+                )}
             </div>
         </>
     );

@@ -6,6 +6,7 @@
    without touching the rest of the starter-kit app.
    ============================================================ */
 import type { ReactNode } from 'react';
+import { CredentialSecretGate } from '@/components/maac/credential-secret-gate';
 import { Sidebar } from '@/components/maac/sidebar';
 import { Topbar } from '@/components/maac/topbar';
 import { MaacNavProvider } from '@/maac/nav';
@@ -47,6 +48,7 @@ export default function MaacLayout({ children }: { children: ReactNode }) {
                         </div>
                     </main>
                 </div>
+                <CredentialSecretGate />
             </div>
         </MaacNavProvider>
     );

@@ -22,6 +22,7 @@ class ApplicationResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'uuid' => $this->id,
             'id' => $this->slug,
             'name' => $this->name,
             'code' => $this->code,
@@ -39,6 +40,7 @@ class ApplicationResource extends JsonResource
             'desc' => $this->description,
             'credStatus' => $this->whenLoaded('credentials', fn () => $this->credentialStatus()),
             'lastSyncedAt' => $this->whenLoaded('credentials', fn () => $this->lastSyncedAt()),
+            'credentials' => $this->whenLoaded('credentials', fn () => CredentialResource::collection($this->credentials)->resolve()),
             'region' => $this->region,
             'created' => $this->created_at?->format('j M Y') ?? '',
         ];

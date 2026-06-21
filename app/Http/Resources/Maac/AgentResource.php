@@ -23,6 +23,7 @@ class AgentResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'uuid' => $this->id,
             'id' => $this->slug,
             'name' => $this->name,
             'projectId' => $this->whenLoaded('project', fn () => $this->project->slug),

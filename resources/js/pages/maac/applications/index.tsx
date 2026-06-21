@@ -1,8 +1,9 @@
 /* ============================================================
    MAAC — Applications (list)
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import { store } from '@/actions/App/Http/Controllers/Maac/ApplicationController';
 import {
     AppMark,
     APP_STATUS,
@@ -24,6 +25,7 @@ import {
     inputStyle,
 } from '@/components/maac/ui';
 import type { Application } from '@/maac/data';
+import { ENV_OPTIONS, FieldError, useCurrentTeam } from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 
@@ -225,22 +227,57 @@ function RegisterAppModal({
     open: boolean;
     onClose: () => void;
 }) {
-    const [name, setName] = useState('');
+    const team = useCurrentTeam();
+    const form = useForm({
+        name: '',
+        code: '',
+        environment: 'production',
+        department: '',
+        owner_name: '',
+        owner_email: '',
+        stack: '',
+        region: '',
+        description: '',
+    });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        form.post(store([team.slug]).url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                onClose();
+            },
+        });
+    };
 
     return (
         <Modal
             open={open}
-            onClose={onClose}
+            onClose={close}
             icon="apps"
             title="Register Application"
-            sub="Create a new application and generate environment credentials."
+            sub="Create a new application. Generate environment credentials from its detail page once registered."
             footer={
                 <>
-                    <Btn variant="ghost" onClick={onClose}>
+                    <Btn variant="ghost" onClick={close}>
                         Cancel
                     </Btn>
-                    <Btn variant="primary" icon="check" onClick={onClose}>
-                        Register & Generate Credentials
+                    <Btn
+                        variant="primary"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        Register Application
                     </Btn>
                 </>
             }
@@ -248,10 +285,11 @@ function RegisterAppModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <Field label="Application name" required>
                     <Input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        value={form.data.name}
+                        onChange={(e) => form.setData('name', e.target.value)}
                         placeholder="e.g. Marine Operations Portal"
                     />
+                    <FieldError error={form.errors.name} />
                 </Field>
                 <div
                     style={{
@@ -265,14 +303,22 @@ function RegisterAppModal({
                         required
                         hint="Lowercase, hyphenated identifier"
                     >
-                        <Input placeholder="marine-ops-portal" />
+                        <Input
+                            value={form.data.code}
+                            onChange={(e) =>
+                                form.setData('code', e.target.value)
+                            }
+                            placeholder="marine-ops-portal"
+                        />
+                        <FieldError error={form.errors.code} />
                     </Field>
                     <Field label="Environment" required>
                         <Select
-                            value="Production"
-                            onChange={() => {}}
-                            options={['Production', 'Staging', 'Development']}
+                            value={form.data.environment}
+                            onChange={(v) => form.setData('environment', v)}
+                            options={ENV_OPTIONS}
                         />
+                        <FieldError error={form.errors.environment} />
                     </Field>
                 </div>
                 <div
@@ -283,25 +329,69 @@ function RegisterAppModal({
                     }}
                 >
                     <Field label="Owning department" required>
-                        <Select
-                            value="Maritime & Logistics"
-                            onChange={() => {}}
-                            options={[
-                                'Maritime & Logistics',
-                                'Finance',
-                                'Procurement',
-                                'Customer Experience',
-                                'Marine & Technical Services',
-                            ]}
+                        <Input
+                            value={form.data.department}
+                            onChange={(e) =>
+                                form.setData('department', e.target.value)
+                            }
+                            placeholder="Maritime & Logistics"
                         />
+                        <FieldError error={form.errors.department} />
                     </Field>
-                    <Field label="Technical owner" required>
-                        <Input placeholder="name@milaha.com" />
+                    <Field label="Technology stack" hint="Optional">
+                        <Input
+                            value={form.data.stack}
+                            onChange={(e) =>
+                                form.setData('stack', e.target.value)
+                            }
+                            placeholder="Laravel · PHP 8.3"
+                        />
+                        <FieldError error={form.errors.stack} />
                     </Field>
                 </div>
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 14,
+                    }}
+                >
+                    <Field label="Business owner" required>
+                        <Input
+                            value={form.data.owner_name}
+                            onChange={(e) =>
+                                form.setData('owner_name', e.target.value)
+                            }
+                            placeholder="Khalid Al-Mansoori"
+                        />
+                        <FieldError error={form.errors.owner_name} />
+                    </Field>
+                    <Field label="Owner email" required>
+                        <Input
+                            type="email"
+                            value={form.data.owner_email}
+                            onChange={(e) =>
+                                form.setData('owner_email', e.target.value)
+                            }
+                            placeholder="name@milaha.com"
+                        />
+                        <FieldError error={form.errors.owner_email} />
+                    </Field>
+                </div>
+                <Field label="Region" hint="Optional">
+                    <Input
+                        value={form.data.region}
+                        onChange={(e) => form.setData('region', e.target.value)}
+                        placeholder="Qatar — Doha DC"
+                    />
+                </Field>
                 <Field label="Description">
                     <Textarea
                         rows={3}
+                        value={form.data.description}
+                        onChange={(e) =>
+                            form.setData('description', e.target.value)
+                        }
                         placeholder="What does this application do?"
                     />
                 </Field>
@@ -331,10 +421,10 @@ function RegisterAppModal({
                             lineHeight: 1.5,
                         }}
                     >
-                        On registration, MAAC generates a <b>Client ID</b> and{' '}
-                        <b>Client Secret</b> scoped to this environment. The
-                        application installs the MAAC SDK and configures these
-                        credentials to connect.
+                        After registration, open the application and generate a{' '}
+                        <b>Client ID</b> and <b>Client Secret</b> per
+                        environment. The application installs the MAAC SDK and
+                        configures these credentials to connect.
                     </div>
                 </div>
             </div>

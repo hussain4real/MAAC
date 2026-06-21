@@ -1,8 +1,13 @@
 /* ============================================================
    MAAC — Agent Detail
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import {
+    destroy as destroyAgent,
+    publish as publishAgent,
+    update as updateAgent,
+} from '@/actions/App/Http/Controllers/Maac/AgentController';
 import { VBars, StatCard, Progress } from '@/components/maac/charts';
 import {
     AppHistory,
@@ -18,15 +23,20 @@ import {
     CodeBlock,
     EnvBadge,
     ExecChip,
+    Field,
     ImplBadge,
+    Input,
     KV,
+    Modal,
     PageHeader,
     RunBadge,
     SectionHeader,
+    Select,
     SensBadge,
     Table,
     Tabs,
     Td,
+    Textarea,
     Toggle,
     Tr,
     scopeBadge,
@@ -34,6 +44,13 @@ import {
 } from '@/components/maac/ui';
 import type { KVItem } from '@/components/maac/ui';
 import type { Agent, Llm, Project, Application, Tool, Run } from '@/maac/data';
+import {
+    AGENT_STATUS_OPTIONS,
+    ChipMultiSelect,
+    FieldError,
+    toEnumValue,
+    useCurrentTeam,
+} from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import type { RouteName } from '@/maac/nav';
@@ -314,7 +331,7 @@ function AgentOverview({
 }
 
 /* ---------- AgentPrompt (local) ---------- */
-function AgentPrompt({ agent }: { agent: Agent }) {
+function AgentPrompt({ agent, onEdit }: { agent: Agent; onEdit: () => void }) {
     return (
         <div
             style={{
@@ -329,7 +346,12 @@ function AgentPrompt({ agent }: { agent: Agent }) {
                     sub="Defines the agent's role, boundaries, and expected behavior"
                     icon="doc"
                     right={
-                        <Btn variant="default" size="sm" icon="edit">
+                        <Btn
+                            variant="default"
+                            size="sm"
+                            icon="edit"
+                            onClick={onEdit}
+                        >
                             Edit
                         </Btn>
                     }
@@ -965,12 +987,230 @@ function AgentSafety({ agent, llm }: { agent: Agent; llm: Llm | undefined }) {
     );
 }
 
+/* ---------- EditAgentModal (local) ---------- */
+function EditAgentModal({
+    agent,
+    open,
+    onClose,
+    onDeleted,
+}: {
+    agent: Agent;
+    open: boolean;
+    onClose: () => void;
+    onDeleted: () => void;
+}) {
+    const team = useCurrentTeam();
+    const MAAC = useMaacData();
+    const toolOptions = MAAC.tools.map((t) => ({
+        value: t.uuid ?? t.id,
+        label: t.name,
+    }));
+    const initialTools = agent.tools
+        .map((slug) => MAAC.toolById(slug)?.uuid)
+        .filter((toolId): toolId is string => Boolean(toolId));
+
+    const form = useForm<{
+        name: string;
+        description: string;
+        system_prompt: string;
+        llm_provider_id: string;
+        temperature: number;
+        max_tokens: number;
+        status: string;
+        tool_ids: string[];
+    }>({
+        name: agent.name,
+        description: agent.desc ?? '',
+        system_prompt: agent.prompt,
+        llm_provider_id: MAAC.llmById(agent.llm)?.uuid ?? '',
+        temperature: agent.temp,
+        max_tokens: agent.maxTokens,
+        status: toEnumValue(agent.status),
+        tool_ids: initialTools,
+    });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const toggleTool = (value: string) => {
+        form.setData(
+            'tool_ids',
+            form.data.tool_ids.includes(value)
+                ? form.data.tool_ids.filter((toolId) => toolId !== value)
+                : [...form.data.tool_ids, value],
+        );
+    };
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        form.put(updateAgent([team.slug, agent.id]).url, {
+            preserveScroll: true,
+            onSuccess: () => onClose(),
+        });
+    };
+
+    const remove = () => {
+        if (
+            team &&
+            window.confirm(`Delete ${agent.name}? This cannot be undone.`)
+        ) {
+            router.delete(destroyAgent([team.slug, agent.id]).url, {
+                preserveScroll: true,
+                onSuccess: onDeleted,
+            });
+        }
+    };
+
+    const half = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 };
+
+    return (
+        <Modal
+            open={open}
+            onClose={close}
+            icon="agents"
+            title="Edit agent"
+            sub={agent.name}
+            width={640}
+            footer={
+                <>
+                    <Btn
+                        variant="ghost"
+                        icon="trash"
+                        style={{ color: 'var(--red-600)' }}
+                        onClick={remove}
+                    >
+                        Delete
+                    </Btn>
+                    <div style={{ flex: 1 }} />
+                    <Btn variant="ghost" onClick={close}>
+                        Cancel
+                    </Btn>
+                    <Btn
+                        variant="primary"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        Save changes
+                    </Btn>
+                </>
+            }
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={half}>
+                    <Field label="Agent name" required>
+                        <Input
+                            value={form.data.name}
+                            onChange={(e) =>
+                                form.setData('name', e.target.value)
+                            }
+                        />
+                        <FieldError error={form.errors.name} />
+                    </Field>
+                    <Field label="Status" required>
+                        <Select
+                            value={form.data.status}
+                            onChange={(v) => form.setData('status', v)}
+                            options={AGENT_STATUS_OPTIONS}
+                        />
+                        <FieldError error={form.errors.status} />
+                    </Field>
+                </div>
+                <Field label="Description">
+                    <Input
+                        value={form.data.description}
+                        onChange={(e) =>
+                            form.setData('description', e.target.value)
+                        }
+                    />
+                    <FieldError error={form.errors.description} />
+                </Field>
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr 1fr',
+                        gap: 14,
+                    }}
+                >
+                    <Field label="Model" required>
+                        <Select
+                            value={form.data.llm_provider_id}
+                            onChange={(v) => form.setData('llm_provider_id', v)}
+                            options={MAAC.llms.map((l) => ({
+                                value: l.uuid ?? l.id,
+                                label: l.name,
+                            }))}
+                        />
+                        <FieldError error={form.errors.llm_provider_id} />
+                    </Field>
+                    <Field label="Temperature" required>
+                        <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="2"
+                            value={form.data.temperature}
+                            onChange={(e) =>
+                                form.setData(
+                                    'temperature',
+                                    parseFloat(e.target.value) || 0,
+                                )
+                            }
+                        />
+                        <FieldError error={form.errors.temperature} />
+                    </Field>
+                    <Field label="Max tokens" required>
+                        <Input
+                            type="number"
+                            min="1"
+                            value={form.data.max_tokens}
+                            onChange={(e) =>
+                                form.setData(
+                                    'max_tokens',
+                                    parseInt(e.target.value) || 0,
+                                )
+                            }
+                        />
+                        <FieldError error={form.errors.max_tokens} />
+                    </Field>
+                </div>
+                <Field label="System prompt" required>
+                    <Textarea
+                        rows={8}
+                        value={form.data.system_prompt}
+                        onChange={(e) =>
+                            form.setData('system_prompt', e.target.value)
+                        }
+                        style={{ fontFamily: 'var(--mono)', fontSize: 12.5 }}
+                    />
+                    <FieldError error={form.errors.system_prompt} />
+                </Field>
+                <Field label="Tools">
+                    <ChipMultiSelect
+                        options={toolOptions}
+                        selected={form.data.tool_ids}
+                        onToggle={toggleTool}
+                    />
+                    <FieldError error={form.errors.tool_ids} />
+                </Field>
+            </div>
+        </Modal>
+    );
+}
+
 /* ---------- Page ---------- */
 export default function Show({ id }: { id: string }) {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
+    const team = useCurrentTeam();
     const agent = MAAC.agentById(id);
     const [tab, setTab] = useState('overview');
+    const [showEdit, setShowEdit] = useState(false);
 
     if (!agent) {
         return <PlaceholderScreen name="Agent" />;
@@ -984,6 +1224,26 @@ export default function Show({ id }: { id: string }) {
     const project = MAAC.projectById(agent.projectId);
     const app = MAAC.appById(agent.appId);
     const agentRuns = MAAC.runs.filter((r) => r.agentId === id);
+
+    const publish = () => {
+        if (team) {
+            router.post(
+                publishAgent([team.slug, agent.id]).url,
+                {},
+                { preserveScroll: true },
+            );
+        }
+    };
+
+    const setStatus = (status: string) => {
+        if (team) {
+            router.put(
+                updateAgent([team.slug, agent.id]).url,
+                { status },
+                { preserveScroll: true },
+            );
+        }
+    };
 
     const tabs = [
         { id: 'overview', label: 'Overview', icon: 'dashboard' },
@@ -1026,8 +1286,12 @@ export default function Show({ id }: { id: string }) {
                     sub={agent.desc}
                     actions={
                         <>
-                            <Btn variant="default" icon="copy">
-                                Clone
+                            <Btn
+                                variant="default"
+                                icon="edit"
+                                onClick={() => setShowEdit(true)}
+                            >
+                                Edit
                             </Btn>
                             <Btn
                                 variant="default"
@@ -1039,11 +1303,19 @@ export default function Show({ id }: { id: string }) {
                                 Test in Playground
                             </Btn>
                             {agent.status === 'Published' ? (
-                                <Btn variant="danger" icon="power">
+                                <Btn
+                                    variant="danger"
+                                    icon="power"
+                                    onClick={() => setStatus('disabled')}
+                                >
                                     Disable
                                 </Btn>
                             ) : (
-                                <Btn variant="primary" icon="check2">
+                                <Btn
+                                    variant="primary"
+                                    icon="check2"
+                                    onClick={publish}
+                                >
                                     Publish
                                 </Btn>
                             )}
@@ -1062,12 +1334,24 @@ export default function Show({ id }: { id: string }) {
                         setTab={setTab}
                     />
                 )}
-                {tab === 'prompt' && <AgentPrompt agent={agent} />}
+                {tab === 'prompt' && (
+                    <AgentPrompt
+                        agent={agent}
+                        onEdit={() => setShowEdit(true)}
+                    />
+                )}
                 {tab === 'tools' && <AgentTools agent={agent} go={go} />}
                 {tab === 'api' && <AgentAPI agent={agent} />}
                 {tab === 'runs' && <AppHistory app={{ id: agent.appId }} />}
                 {tab === 'versions' && <AgentVersions agent={agent} />}
                 {tab === 'safety' && <AgentSafety agent={agent} llm={llm} />}
+
+                <EditAgentModal
+                    agent={agent}
+                    open={showEdit}
+                    onClose={() => setShowEdit(false)}
+                    onDeleted={() => go('agents')}
+                />
             </div>
         </>
     );
