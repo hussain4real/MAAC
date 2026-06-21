@@ -1,8 +1,9 @@
 /* ============================================================
    MAAC — Create Agent Wizard
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { store as storeAgent } from '@/actions/App/Http/Controllers/Maac/AgentController';
 import {
     Badge,
     Btn,
@@ -18,13 +19,24 @@ import {
     Toggle,
 } from '@/components/maac/ui';
 import type { Application, Llm, Project, Tool } from '@/maac/data';
+import { FieldError, useCurrentTeam } from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
 
+/** Slugify an agent name into a runtime-safe identifier. */
+function slugifyAgent(value: string): string {
+    return value
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
 /* ── Wizard data shape ─────────────────────────────────────── */
 interface AgentDraft {
     name: string;
+    agentSlug: string;
     desc: string;
     app: string;
     project: string;
@@ -44,6 +56,7 @@ type SetFn = <K extends keyof AgentDraft>(k: K, v: AgentDraft[K]) => void;
 interface StepProps {
     data: AgentDraft;
     set: SetFn;
+    errors?: Record<string, string>;
 }
 
 interface StepReviewProps {
@@ -64,7 +77,7 @@ function StepHeader({ title, sub }: { title: string; sub: string }) {
 }
 
 /* ── StepBasic ─────────────────────────────────────────────── */
-function StepBasic({ data, set }: StepProps) {
+function StepBasic({ data, set, errors }: StepProps) {
     const { scope } = useMaacNav();
     const MAAC = useMaacData();
     const apps: Application[] = scope.apps.length ? scope.apps : MAAC.apps;
@@ -90,6 +103,21 @@ function StepBasic({ data, set }: StepProps) {
                         onChange={(e) => set('name', e.target.value)}
                         placeholder="e.g. Operations Summary Agent"
                     />
+                    <FieldError error={errors?.name} />
+                </Field>
+                <Field
+                    label="Agent slug"
+                    required
+                    hint="Runtime API identifier — letters, numbers, and dashes."
+                >
+                    <Input
+                        value={data.agentSlug}
+                        onChange={(e) => set('agentSlug', e.target.value)}
+                        placeholder={
+                            slugifyAgent(data.name) || 'operations-summary'
+                        }
+                    />
+                    <FieldError error={errors?.agent_slug} />
                 </Field>
                 <Field
                     label="Short description"
@@ -791,9 +819,14 @@ function StepReview({ data, go }: StepReviewProps) {
 /* ── CreateAgent (page) ────────────────────────────────────── */
 export default function CreateAgent() {
     const { go, back } = useMaacNav();
+    const MAAC = useMaacData();
+    const team = useCurrentTeam();
     const [step, setStep] = useState(0);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [processing, setProcessing] = useState(false);
     const [data, setData] = useState<AgentDraft>({
         name: '',
+        agentSlug: '',
         desc: '',
         app: 'MOP',
         project: 'prj_mop_ops',
@@ -807,6 +840,37 @@ export default function CreateAgent() {
         masking: true,
     });
     const set: SetFn = (k, v) => setData((d) => ({ ...d, [k]: v }));
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        router.post(
+            storeAgent([team.slug]).url,
+            {
+                project_id: MAAC.projectById(data.project)?.uuid ?? '',
+                llm_provider_id: MAAC.llmById(data.llm)?.uuid ?? '',
+                name: data.name,
+                agent_slug: data.agentSlug.trim() || slugifyAgent(data.name),
+                system_prompt: data.prompt,
+                temperature: data.temp,
+                max_tokens: data.maxTokens,
+                description: data.desc,
+                status: 'draft',
+                tool_ids: data.tools
+                    .map((slug) => MAAC.toolById(slug)?.uuid)
+                    .filter((id): id is string => Boolean(id)),
+            },
+            {
+                preserveScroll: true,
+                onStart: () => setProcessing(true),
+                onFinish: () => setProcessing(false),
+                onError: (formErrors) => setErrors(formErrors),
+                onSuccess: () => go('agents'),
+            },
+        );
+    };
 
     const steps: { id: string; label: string; icon: string }[] = [
         { id: 'basic', label: 'Basic Information', icon: 'info' },
@@ -942,7 +1006,11 @@ export default function CreateAgent() {
                         >
                             <div style={{ flex: 1 }}>
                                 {step === 0 && (
-                                    <StepBasic data={data} set={set} />
+                                    <StepBasic
+                                        data={data}
+                                        set={set}
+                                        errors={errors}
+                                    />
                                 )}
                                 {step === 1 && (
                                     <StepPrompt data={data} set={set} />
@@ -960,6 +1028,33 @@ export default function CreateAgent() {
                                     <StepReview data={data} go={go} />
                                 )}
                             </div>
+                            {Object.keys(errors).length > 0 && (
+                                <div
+                                    style={{
+                                        marginTop: 16,
+                                        padding: '11px 13px',
+                                        background: 'var(--red-100)',
+                                        border: '1px solid var(--red-500)',
+                                        borderRadius: 'var(--r-md)',
+                                        fontSize: 12,
+                                        color: 'var(--red-600)',
+                                    }}
+                                >
+                                    <b>Please fix the following:</b>
+                                    <ul
+                                        style={{
+                                            margin: '6px 0 0',
+                                            paddingLeft: 18,
+                                        }}
+                                    >
+                                        {Object.values(errors).map(
+                                            (message) => (
+                                                <li key={message}>{message}</li>
+                                            ),
+                                        )}
+                                    </ul>
+                                </div>
+                            )}
                             <div
                                 style={{
                                     display: 'flex',
@@ -1000,9 +1095,10 @@ export default function CreateAgent() {
                                     <Btn
                                         variant="primary"
                                         icon="check2"
-                                        onClick={() => go('agents')}
+                                        disabled={processing}
+                                        onClick={submit}
                                     >
-                                        Create & Publish Agent
+                                        Create Agent
                                     </Btn>
                                 )}
                             </div>

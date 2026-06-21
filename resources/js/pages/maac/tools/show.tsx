@@ -1,14 +1,16 @@
 /* ============================================================
    MAAC — Tool Detail
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { destroy as destroyTool } from '@/actions/App/Http/Controllers/Maac/ToolContractController';
 import {
     NoAccess,
     PlaceholderScreen,
     Timeline,
     schemaJson,
 } from '@/components/maac/common';
+import { ToolFormModal } from '@/components/maac/tool-form';
 import {
     AgentBadge,
     AppMark,
@@ -30,6 +32,7 @@ import {
     scopeBadge,
 } from '@/components/maac/ui';
 import type { Agent, Tool } from '@/maac/data';
+import { useCurrentTeam } from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
@@ -37,7 +40,9 @@ import { useMaacData } from '@/maac/use-data';
 export default function Show({ id }: { id: string }) {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
+    const team = useCurrentTeam();
     const tool = MAAC.toolById(id);
+    const [showEdit, setShowEdit] = useState(false);
 
     if (!tool) {
         return <PlaceholderScreen name="Tool" />;
@@ -51,6 +56,20 @@ export default function Show({ id }: { id: string }) {
     const usedByAgents = tool.usedBy
         .map((a) => MAAC.agentById(a))
         .filter((a): a is Agent => Boolean(a));
+
+    const deprecate = () => {
+        if (
+            team &&
+            window.confirm(
+                `Deprecate ${tool.name}? It will be removed from the registry.`,
+            )
+        ) {
+            router.delete(destroyTool([team.slug, tool.id]).url, {
+                preserveScroll: true,
+                onSuccess: () => go('tools'),
+            });
+        }
+    };
 
     return (
         <>
@@ -74,19 +93,13 @@ export default function Show({ id }: { id: string }) {
                     }
                     sub={tool.desc}
                     actions={
-                        <>
-                            <Btn variant="default" icon="edit">
-                                Edit
-                            </Btn>
-                            {isClient && (
-                                <Btn variant="default" icon="code">
-                                    Generate SDK Stub
-                                </Btn>
-                            )}
-                            <Btn variant="primary" icon="link">
-                                Assign to Agent
-                            </Btn>
-                        </>
+                        <Btn
+                            variant="default"
+                            icon="edit"
+                            onClick={() => setShowEdit(true)}
+                        >
+                            Edit
+                        </Btn>
                     }
                 />
 
@@ -476,11 +489,22 @@ export default function Show({ id }: { id: string }) {
                                 ))}
                             </div>
                         </Card>
-                        <Btn variant="danger" icon="archive" full>
+                        <Btn
+                            variant="danger"
+                            icon="archive"
+                            full
+                            onClick={deprecate}
+                        >
                             Deprecate Tool
                         </Btn>
                     </div>
                 </div>
+
+                <ToolFormModal
+                    tool={tool}
+                    open={showEdit}
+                    onClose={() => setShowEdit(false)}
+                />
             </div>
         </>
     );

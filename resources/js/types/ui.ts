@@ -13,6 +13,12 @@ export type FlashToast = {
     message: string;
 };
 
+/** One-time application credential secret, flashed on generate/rotate. */
+export type CredentialSecretFlash = {
+    clientId: string;
+    secret: string;
+};
+
 export type AuthLayoutProps = {
     children?: ReactNode;
     name?: string;

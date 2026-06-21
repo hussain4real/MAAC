@@ -1,8 +1,13 @@
 /* ============================================================
    MAAC — Projects
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import {
+    destroy as destroyProject,
+    store as storeProject,
+    update as updateProject,
+} from '@/actions/App/Http/Controllers/Maac/ProjectController';
 import {
     Avatar,
     Badge,
@@ -19,6 +24,14 @@ import {
 } from '@/components/maac/ui';
 import { inputStyle } from '@/components/maac/ui';
 import type { Project } from '@/maac/data';
+import {
+    ChipMultiSelect,
+    ENV_OPTIONS,
+    FieldError,
+    PROJECT_STATUS_OPTIONS,
+    toEnumValue,
+    useCurrentTeam,
+} from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
@@ -50,13 +63,227 @@ function Owner({ label, name }: OwnerProps) {
     );
 }
 
+function ProjectFormModal({
+    project,
+    open,
+    onClose,
+}: {
+    project?: Project;
+    open: boolean;
+    onClose: () => void;
+}) {
+    const team = useCurrentTeam();
+    const MAAC = useMaacData();
+    const isEdit = !!project;
+    const llmOptions = MAAC.llms.map((l) => ({
+        value: l.uuid ?? l.id,
+        label: l.name,
+    }));
+    const initialLlms = project
+        ? project.llms
+              .map((slug) => MAAC.llmById(slug)?.uuid)
+              .filter((id): id is string => Boolean(id))
+        : [];
+
+    const form = useForm<{
+        name: string;
+        application_id: string;
+        environment: string;
+        status: string;
+        description: string;
+        business_owner: string;
+        technical_owner: string;
+        llm_provider_ids: string[];
+    }>({
+        name: project?.name ?? '',
+        application_id: project ? '' : (MAAC.apps[0]?.uuid ?? ''),
+        environment: project ? toEnumValue(project.env) : 'production',
+        status: project ? toEnumValue(project.status) : 'active',
+        description: project?.desc ?? '',
+        business_owner: project?.bizOwner ?? '',
+        technical_owner: project?.techOwner ?? '',
+        llm_provider_ids: initialLlms,
+    });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const toggleLlm = (value: string) => {
+        form.setData(
+            'llm_provider_ids',
+            form.data.llm_provider_ids.includes(value)
+                ? form.data.llm_provider_ids.filter((id) => id !== value)
+                : [...form.data.llm_provider_ids, value],
+        );
+    };
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        if (project) {
+            form.put(updateProject([team.slug, project.id]).url, {
+                preserveScroll: true,
+                onSuccess: () => onClose(),
+            });
+
+            return;
+        }
+
+        form.post(storeProject([team.slug]).url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                onClose();
+            },
+        });
+    };
+
+    const half = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 };
+
+    return (
+        <Modal
+            open={open}
+            onClose={close}
+            icon="projects"
+            title={isEdit ? 'Edit project' : 'Create Project'}
+            sub={
+                isEdit
+                    ? project.name
+                    : 'Group agents and tools under an application.'
+            }
+            footer={
+                <>
+                    <Btn variant="ghost" onClick={close}>
+                        Cancel
+                    </Btn>
+                    <Btn
+                        variant="primary"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        {isEdit ? 'Save changes' : 'Create Project'}
+                    </Btn>
+                </>
+            }
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <Field label="Project name" required>
+                    <Input
+                        value={form.data.name}
+                        onChange={(e) => form.setData('name', e.target.value)}
+                        placeholder="e.g. Fleet Operations Intelligence"
+                    />
+                    <FieldError error={form.errors.name} />
+                </Field>
+                <div style={half}>
+                    {!isEdit && (
+                        <Field label="Owning application" required>
+                            <Select
+                                value={form.data.application_id}
+                                onChange={(v) =>
+                                    form.setData('application_id', v)
+                                }
+                                options={MAAC.apps.map((a) => ({
+                                    value: a.uuid ?? a.id,
+                                    label: a.name,
+                                }))}
+                            />
+                            <FieldError error={form.errors.application_id} />
+                        </Field>
+                    )}
+                    <Field label="Environment" required>
+                        <Select
+                            value={form.data.environment}
+                            onChange={(v) => form.setData('environment', v)}
+                            options={ENV_OPTIONS}
+                        />
+                        <FieldError error={form.errors.environment} />
+                    </Field>
+                    {isEdit && (
+                        <Field label="Status" required>
+                            <Select
+                                value={form.data.status}
+                                onChange={(v) => form.setData('status', v)}
+                                options={PROJECT_STATUS_OPTIONS}
+                            />
+                            <FieldError error={form.errors.status} />
+                        </Field>
+                    )}
+                </div>
+                <div style={half}>
+                    <Field label="Business owner">
+                        <Input
+                            value={form.data.business_owner}
+                            onChange={(e) =>
+                                form.setData('business_owner', e.target.value)
+                            }
+                            placeholder="name@milaha.com"
+                        />
+                        <FieldError error={form.errors.business_owner} />
+                    </Field>
+                    <Field label="Technical owner">
+                        <Input
+                            value={form.data.technical_owner}
+                            onChange={(e) =>
+                                form.setData('technical_owner', e.target.value)
+                            }
+                            placeholder="name@milaha.com"
+                        />
+                        <FieldError error={form.errors.technical_owner} />
+                    </Field>
+                </div>
+                <Field label="Description">
+                    <Textarea
+                        rows={2}
+                        value={form.data.description}
+                        onChange={(e) =>
+                            form.setData('description', e.target.value)
+                        }
+                        placeholder="What is this project for?"
+                    />
+                    <FieldError error={form.errors.description} />
+                </Field>
+                <Field
+                    label="Allowed LLMs"
+                    hint="Restrict which approved models agents in this project may use."
+                >
+                    <ChipMultiSelect
+                        options={llmOptions}
+                        selected={form.data.llm_provider_ids}
+                        onToggle={toggleLlm}
+                    />
+                    <FieldError error={form.errors.llm_provider_ids} />
+                </Field>
+            </div>
+        </Modal>
+    );
+}
+
 export default function Projects() {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
+    const team = useCurrentTeam();
     const [q, setQ] = useState('');
     const [appFilter, setAppFilter] = useState('All applications');
     const [statusFilter, setStatusFilter] = useState('All statuses');
     const [showCreate, setShowCreate] = useState(false);
+    const [editing, setEditing] = useState<Project | null>(null);
+
+    const archive = (project: Project) => {
+        if (
+            team &&
+            window.confirm(`Archive ${project.name}? Its agents will remain.`)
+        ) {
+            router.delete(destroyProject([team.slug, project.id]).url, {
+                preserveScroll: true,
+            });
+        }
+    };
 
     const appOpts = ['All applications', ...scope.apps.map((a) => a.name)];
     const list: Project[] = scope.projects.filter((p) => {
@@ -194,6 +421,7 @@ export default function Projects() {
                                                 display: 'flex',
                                                 gap: 6,
                                                 flexShrink: 0,
+                                                alignItems: 'center',
                                             }}
                                         >
                                             <EnvBadge env={p.env} />
@@ -207,6 +435,38 @@ export default function Projects() {
                                             >
                                                 {p.status}
                                             </Badge>
+                                            <div
+                                                onClick={(e) =>
+                                                    e.stopPropagation()
+                                                }
+                                                style={{
+                                                    display: 'flex',
+                                                    gap: 4,
+                                                }}
+                                            >
+                                                <Btn
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    icon="edit"
+                                                    style={{
+                                                        height: 28,
+                                                        width: 28,
+                                                    }}
+                                                    onClick={() =>
+                                                        setEditing(p)
+                                                    }
+                                                />
+                                                <Btn
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    icon="archive"
+                                                    style={{
+                                                        height: 28,
+                                                        width: 28,
+                                                    }}
+                                                    onClick={() => archive(p)}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                     <div
@@ -302,98 +562,18 @@ export default function Projects() {
                     })}
                 </div>
 
-                <Modal
+                <ProjectFormModal
                     open={showCreate}
                     onClose={() => setShowCreate(false)}
-                    icon="projects"
-                    title="Create Project"
-                    sub="Group agents and tools under an application."
-                    footer={
-                        <>
-                            <Btn
-                                variant="ghost"
-                                onClick={() => setShowCreate(false)}
-                            >
-                                Cancel
-                            </Btn>
-                            <Btn
-                                variant="primary"
-                                icon="check"
-                                onClick={() => setShowCreate(false)}
-                            >
-                                Create Project
-                            </Btn>
-                        </>
-                    }
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 16,
-                        }}
-                    >
-                        <Field label="Project name" required>
-                            <Input placeholder="e.g. Fleet Operations Intelligence" />
-                        </Field>
-                        <div
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: 14,
-                            }}
-                        >
-                            <Field label="Owning application" required>
-                                <Select
-                                    value={MAAC.apps[0].name}
-                                    onChange={() => {}}
-                                    options={MAAC.apps.map((a) => a.name)}
-                                />
-                            </Field>
-                            <Field label="Environment" required>
-                                <Select
-                                    value="Production"
-                                    onChange={() => {}}
-                                    options={[
-                                        'Production',
-                                        'Staging',
-                                        'Development',
-                                    ]}
-                                />
-                            </Field>
-                        </div>
-                        <Field label="Description">
-                            <Textarea
-                                rows={2}
-                                placeholder="What is this project for?"
-                            />
-                        </Field>
-                        <Field
-                            label="Allowed LLMs"
-                            hint="Restrict which approved models agents in this project may use."
-                        >
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    gap: 6,
-                                    flexWrap: 'wrap',
-                                }}
-                            >
-                                {MAAC.llms
-                                    .filter((l) => l.status === 'Approved')
-                                    .map((l, i) => (
-                                        <Badge
-                                            key={l.id}
-                                            tone={i < 2 ? 'purple' : 'neutral'}
-                                            soft
-                                        >
-                                            {l.name}
-                                        </Badge>
-                                    ))}
-                            </div>
-                        </Field>
-                    </div>
-                </Modal>
+                />
+                {editing && (
+                    <ProjectFormModal
+                        key={editing.id}
+                        project={editing}
+                        open
+                        onClose={() => setEditing(null)}
+                    />
+                )}
             </div>
         </>
     );

@@ -1,8 +1,17 @@
 /* ============================================================
    MAAC — Application Detail
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
+import {
+    destroy as archiveApplication,
+    update as updateApplication,
+} from '@/actions/App/Http/Controllers/Maac/ApplicationController';
+import {
+    revoke as revokeCredential,
+    rotate as rotateCredential,
+    store as storeCredential,
+} from '@/actions/App/Http/Controllers/Maac/CredentialController';
 import {
     AppHistory,
     NoAccess,
@@ -16,19 +25,38 @@ import {
     Btn,
     Card,
     CodeBlock,
+    EmptyState,
     EnvBadge,
     ExecChip,
+    Field,
     ImplBadge,
+    Input,
     KV,
+    Modal,
     PageHeader,
     SectionHeader,
+    Select,
     SensBadge,
     Table,
     Tabs,
     Td,
+    Textarea,
     Tr,
 } from '@/components/maac/ui';
-import type { Agent, Application, Project, Tool } from '@/maac/data';
+import type {
+    Agent,
+    Application,
+    Credential,
+    Project,
+    Tool,
+} from '@/maac/data';
+import {
+    APP_STATUS_OPTIONS,
+    ENV_OPTIONS,
+    FieldError,
+    toEnumValue,
+    useCurrentTeam,
+} from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import type { MaacNav } from '@/maac/nav';
@@ -637,14 +665,231 @@ function CredRow({ label, value }: { label: string; value: string }) {
     );
 }
 
+function CredentialCard({
+    cred,
+    onRotate,
+    onRevoke,
+}: {
+    cred: Credential;
+    onRotate: () => void;
+    onRevoke: () => void;
+}) {
+    const active = cred.status === 'Active';
+
+    return (
+        <div
+            style={{
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r-md)',
+                padding: 14,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                opacity: active ? 1 : 0.72,
+            }}
+        >
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <EnvBadge env={cred.environment} />
+                    {cred.label && (
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>
+                            {cred.label}
+                        </span>
+                    )}
+                </div>
+                <Badge tone={active ? 'teal' : 'red'} dot>
+                    {cred.status}
+                </Badge>
+            </div>
+            <CredRow label="Client ID" value={cred.clientId} />
+            <div>
+                <div
+                    style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: 'var(--text-2)',
+                        marginBottom: 6,
+                    }}
+                >
+                    Client Secret
+                </div>
+                <div
+                    className="mono"
+                    style={{
+                        padding: '10px 12px',
+                        background: 'var(--code-bg)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--r-sm)',
+                        fontSize: 12.5,
+                        color: 'var(--text-3)',
+                    }}
+                >
+                    {`maac_secret_••••••••••••${cred.lastFour ?? '????'}`}
+                </div>
+            </div>
+            <KV
+                cols={2}
+                items={[
+                    { k: 'Last used', v: cred.lastUsedAt ?? 'Never' },
+                    {
+                        k: active ? 'Rotated' : 'Revoked',
+                        v: active
+                            ? (cred.rotatedAt ?? '—')
+                            : (cred.revokedAt ?? '—'),
+                    },
+                ]}
+            />
+            {active && (
+                <div
+                    style={{
+                        display: 'flex',
+                        gap: 8,
+                        alignItems: 'center',
+                        paddingTop: 4,
+                    }}
+                >
+                    <Btn
+                        variant="default"
+                        size="sm"
+                        icon="refresh"
+                        onClick={onRotate}
+                    >
+                        Rotate
+                    </Btn>
+                    <div style={{ flex: 1 }} />
+                    <Btn
+                        variant="danger"
+                        size="sm"
+                        icon="power"
+                        onClick={onRevoke}
+                    >
+                        Revoke
+                    </Btn>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function GenerateCredentialModal({
+    app,
+    open,
+    onClose,
+}: {
+    app: Application;
+    open: boolean;
+    onClose: () => void;
+}) {
+    const team = useCurrentTeam();
+    const form = useForm({ environment: toEnumValue(app.env), label: '' });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        form.post(storeCredential([team.slug, app.id]).url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                onClose();
+            },
+        });
+    };
+
+    return (
+        <Modal
+            open={open}
+            onClose={close}
+            icon="key"
+            title="Generate credential"
+            sub={`A new client ID + secret scoped to ${app.name}.`}
+            footer={
+                <>
+                    <Btn variant="ghost" onClick={close}>
+                        Cancel
+                    </Btn>
+                    <Btn
+                        variant="primary"
+                        icon="key"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        Generate
+                    </Btn>
+                </>
+            }
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <Field label="Environment" required>
+                    <Select
+                        value={form.data.environment}
+                        onChange={(v) => form.setData('environment', v)}
+                        options={ENV_OPTIONS}
+                    />
+                    <FieldError error={form.errors.environment} />
+                </Field>
+                <Field
+                    label="Label"
+                    hint="Optional — to identify where this credential is used."
+                >
+                    <Input
+                        value={form.data.label}
+                        onChange={(e) => form.setData('label', e.target.value)}
+                        placeholder="Production server"
+                    />
+                    <FieldError error={form.errors.label} />
+                </Field>
+            </div>
+        </Modal>
+    );
+}
+
 function AppCreds({ app }: { app: Application }) {
-    const [revealed, setRevealed] = useState(false);
-    const secret = 'msk_live_8f3a••••••••••••••••••••••••2b71';
-    const fullSecret = 'msk_live_8f3a91c4d2e7f60a3b85c19d2b71';
-    const envBlock = `MAAC_PROJECT_ID=prj_${app.code.replace(/-/g, '_')}_${app.env.toLowerCase()}
-MAAC_CLIENT_ID=cid_${app.id.toLowerCase()}_7d21
-MAAC_CLIENT_SECRET=${revealed ? fullSecret : secret}
+    const team = useCurrentTeam();
+    const credentials = app.credentials ?? [];
+    const [showGenerate, setShowGenerate] = useState(false);
+    const activeCred = credentials.find((c) => c.status === 'Active');
+    const envBlock = `MAAC_CLIENT_ID=${activeCred?.clientId ?? 'generate-a-credential'}
+MAAC_CLIENT_SECRET=••••••••••••  # shown once on generation
 MAAC_ENVIRONMENT=${app.env.toLowerCase()}`;
+
+    const rotate = (id: string) => {
+        if (team) {
+            router.post(
+                rotateCredential([team.slug, id]).url,
+                {},
+                { preserveScroll: true },
+            );
+        }
+    };
+
+    const revoke = (id: string) => {
+        if (
+            team &&
+            window.confirm(
+                'Revoke this credential? The application will no longer be able to authenticate with it.',
+            )
+        ) {
+            router.post(
+                revokeCredential([team.slug, id]).url,
+                {},
+                { preserveScroll: true },
+            );
+        }
+    };
 
     return (
         <div
@@ -658,139 +903,52 @@ MAAC_ENVIRONMENT=${app.env.toLowerCase()}`;
                 <Card>
                     <SectionHeader
                         title="API credentials"
-                        sub={`Scoped to ${app.name} · ${app.env}`}
+                        sub={`Client-credentials grants for ${app.name}`}
                         icon="key"
                         right={
-                            <Badge
-                                tone={
-                                    app.credStatus === 'Active' ? 'teal' : 'red'
-                                }
-                                dot
+                            <Btn
+                                variant="primary"
+                                size="sm"
+                                icon="plus"
+                                onClick={() => setShowGenerate(true)}
                             >
-                                {app.credStatus}
-                            </Badge>
+                                Generate credential
+                            </Btn>
                         }
                     />
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 14,
-                        }}
-                    >
-                        <CredRow
-                            label="Client ID"
-                            value={`cid_${app.id.toLowerCase()}_7d21`}
-                        />
-                        <div>
-                            <div
-                                style={{
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    color: 'var(--text-2)',
-                                    marginBottom: 6,
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                }}
-                            >
-                                <span>Client Secret</span>
-                                <button
-                                    onClick={() => setRevealed(!revealed)}
-                                    className="maac-link"
-                                    style={{
-                                        border: 'none',
-                                        background: 'none',
-                                        cursor: 'pointer',
-                                        fontSize: 11.5,
-                                        fontWeight: 600,
-                                        color: 'var(--primary)',
-                                        display: 'flex',
-                                        gap: 5,
-                                        alignItems: 'center',
-                                    }}
+                    {credentials.length === 0 ? (
+                        <EmptyState
+                            icon="key"
+                            title="No credentials yet"
+                            desc="Generate a client ID and secret so this application can authenticate to the MAAC SDK."
+                            action={
+                                <Btn
+                                    variant="primary"
+                                    icon="plus"
+                                    onClick={() => setShowGenerate(true)}
                                 >
-                                    <Icon name="eye" size={13} />
-                                    {revealed ? 'Hide' : 'Reveal'}
-                                </button>
-                            </div>
-                            <div
-                                className="mono"
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    padding: '10px 12px',
-                                    background: 'var(--code-bg)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: 'var(--r-sm)',
-                                    fontSize: 12.5,
-                                    color: 'var(--code-text)',
-                                }}
-                            >
-                                <span>{revealed ? fullSecret : secret}</span>
-                                <Icon
-                                    name="lock"
-                                    size={14}
-                                    style={{ color: 'var(--text-3)' }}
-                                />
-                            </div>
-                        </div>
-                        <CredRow
-                            label="Project / Application Key"
-                            value={`prj_${app.code.replace(/-/g, '_')}_${app.env.toLowerCase()}`}
+                                    Generate credential
+                                </Btn>
+                            }
                         />
-                        <div>
-                            <div
-                                style={{
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    color: 'var(--text-2)',
-                                    marginBottom: 6,
-                                }}
-                            >
-                                Scopes
-                            </div>
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    gap: 6,
-                                    flexWrap: 'wrap',
-                                }}
-                            >
-                                {[
-                                    'agents:invoke',
-                                    'agents:list',
-                                    'tools:register',
-                                    'tools:report',
-                                    'runs:read',
-                                ].map((s) => (
-                                    <Badge key={s} tone="purple" soft>
-                                        {s}
-                                    </Badge>
-                                ))}
-                            </div>
+                    ) : (
+                        <div
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 12,
+                            }}
+                        >
+                            {credentials.map((c) => (
+                                <CredentialCard
+                                    key={c.id}
+                                    cred={c}
+                                    onRotate={() => rotate(c.id)}
+                                    onRevoke={() => revoke(c.id)}
+                                />
+                            ))}
                         </div>
-                    </div>
-                    <div
-                        style={{
-                            display: 'flex',
-                            gap: 9,
-                            marginTop: 18,
-                            paddingTop: 16,
-                            borderTop: '1px solid var(--border)',
-                        }}
-                    >
-                        <Btn variant="default" icon="refresh">
-                            Regenerate Secret
-                        </Btn>
-                        <Btn variant="soft" icon="copy">
-                            Copy config
-                        </Btn>
-                        <div style={{ flex: 1 }} />
-                        <Btn variant="danger" icon="power">
-                            Revoke access
-                        </Btn>
-                    </div>
+                    )}
                 </Card>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -847,6 +1005,11 @@ MAAC_ENVIRONMENT=${app.env.toLowerCase()}`;
                     </div>
                 </div>
             </div>
+            <GenerateCredentialModal
+                app={app}
+                open={showGenerate}
+                onClose={() => setShowGenerate(false)}
+            />
         </div>
     );
 }
@@ -1058,13 +1221,217 @@ console.log(res.output);`;
     );
 }
 
+function EditAppModal({
+    app,
+    open,
+    onClose,
+    onArchived,
+}: {
+    app: Application;
+    open: boolean;
+    onClose: () => void;
+    onArchived: () => void;
+}) {
+    const team = useCurrentTeam();
+    const form = useForm({
+        name: app.name,
+        code: app.code,
+        environment: toEnumValue(app.env),
+        status: toEnumValue(app.status),
+        department: app.dept,
+        owner_name: app.owner,
+        owner_email: app.ownerEmail,
+        stack: app.stack ?? '',
+        region: app.region ?? '',
+        description: app.desc ?? '',
+    });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const submit = () => {
+        if (!team) {
+            return;
+        }
+
+        form.put(updateApplication([team.slug, app.id]).url, {
+            preserveScroll: true,
+            onSuccess: () => onClose(),
+        });
+    };
+
+    const archive = () => {
+        if (
+            team &&
+            window.confirm(
+                `Archive ${app.name}? It will be hidden from the console.`,
+            )
+        ) {
+            router.delete(archiveApplication([team.slug, app.id]).url, {
+                preserveScroll: true,
+                onSuccess: onArchived,
+            });
+        }
+    };
+
+    const half = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 };
+
+    return (
+        <Modal
+            open={open}
+            onClose={close}
+            icon="apps"
+            title="Edit application"
+            sub={app.name}
+            width={620}
+            footer={
+                <>
+                    <Btn
+                        variant="ghost"
+                        icon="archive"
+                        style={{ color: 'var(--red-600)' }}
+                        onClick={archive}
+                    >
+                        Archive
+                    </Btn>
+                    <div style={{ flex: 1 }} />
+                    <Btn variant="ghost" onClick={close}>
+                        Cancel
+                    </Btn>
+                    <Btn
+                        variant="primary"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        Save changes
+                    </Btn>
+                </>
+            }
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <Field label="Application name" required>
+                    <Input
+                        value={form.data.name}
+                        onChange={(e) => form.setData('name', e.target.value)}
+                    />
+                    <FieldError error={form.errors.name} />
+                </Field>
+                <div style={half}>
+                    <Field label="Application code" required>
+                        <Input
+                            value={form.data.code}
+                            onChange={(e) =>
+                                form.setData('code', e.target.value)
+                            }
+                        />
+                        <FieldError error={form.errors.code} />
+                    </Field>
+                    <Field label="Status" required>
+                        <Select
+                            value={form.data.status}
+                            onChange={(v) => form.setData('status', v)}
+                            options={APP_STATUS_OPTIONS}
+                        />
+                        <FieldError error={form.errors.status} />
+                    </Field>
+                </div>
+                <div style={half}>
+                    <Field label="Environment" required>
+                        <Select
+                            value={form.data.environment}
+                            onChange={(v) => form.setData('environment', v)}
+                            options={ENV_OPTIONS}
+                        />
+                        <FieldError error={form.errors.environment} />
+                    </Field>
+                    <Field label="Owning department" required>
+                        <Input
+                            value={form.data.department}
+                            onChange={(e) =>
+                                form.setData('department', e.target.value)
+                            }
+                        />
+                        <FieldError error={form.errors.department} />
+                    </Field>
+                </div>
+                <div style={half}>
+                    <Field label="Business owner" required>
+                        <Input
+                            value={form.data.owner_name}
+                            onChange={(e) =>
+                                form.setData('owner_name', e.target.value)
+                            }
+                        />
+                        <FieldError error={form.errors.owner_name} />
+                    </Field>
+                    <Field label="Owner email" required>
+                        <Input
+                            type="email"
+                            value={form.data.owner_email}
+                            onChange={(e) =>
+                                form.setData('owner_email', e.target.value)
+                            }
+                        />
+                        <FieldError error={form.errors.owner_email} />
+                    </Field>
+                </div>
+                <div style={half}>
+                    <Field label="Technology stack">
+                        <Input
+                            value={form.data.stack}
+                            onChange={(e) =>
+                                form.setData('stack', e.target.value)
+                            }
+                        />
+                        <FieldError error={form.errors.stack} />
+                    </Field>
+                    <Field label="Region">
+                        <Input
+                            value={form.data.region}
+                            onChange={(e) =>
+                                form.setData('region', e.target.value)
+                            }
+                        />
+                        <FieldError error={form.errors.region} />
+                    </Field>
+                </div>
+                <Field label="Description">
+                    <Textarea
+                        rows={3}
+                        value={form.data.description}
+                        onChange={(e) =>
+                            form.setData('description', e.target.value)
+                        }
+                    />
+                    <FieldError error={form.errors.description} />
+                </Field>
+            </div>
+        </Modal>
+    );
+}
+
 /* ---- Page ---- */
 
 export default function Show({ id }: { id: string }) {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
+    const team = useCurrentTeam();
     const app = MAAC.appById(id);
     const [tab, setTab] = useState('overview');
+    const [showEdit, setShowEdit] = useState(false);
+
+    const setStatus = (status: string) => {
+        if (team && app) {
+            router.put(
+                updateApplication([team.slug, app.id]).url,
+                { status },
+                { preserveScroll: true },
+            );
+        }
+    };
 
     if (!app) {
         return <PlaceholderScreen name="Application" />;
@@ -1140,17 +1507,32 @@ export default function Show({ id }: { id: string }) {
                         <>
                             <Btn
                                 variant="default"
+                                icon="edit"
+                                onClick={() => setShowEdit(true)}
+                            >
+                                Edit
+                            </Btn>
+                            <Btn
+                                variant="default"
                                 icon="key"
                                 onClick={() => setTab('creds')}
                             >
                                 Manage Credentials
                             </Btn>
                             {app.status === 'Active' ? (
-                                <Btn variant="danger" icon="power">
+                                <Btn
+                                    variant="danger"
+                                    icon="power"
+                                    onClick={() => setStatus('suspended')}
+                                >
                                     Suspend
                                 </Btn>
                             ) : (
-                                <Btn variant="primary" icon="power">
+                                <Btn
+                                    variant="primary"
+                                    icon="power"
+                                    onClick={() => setStatus('active')}
+                                >
                                     Activate
                                 </Btn>
                             )}
@@ -1177,6 +1559,13 @@ export default function Show({ id }: { id: string }) {
                 {tab === 'creds' && <AppCreds app={app} />}
                 {tab === 'history' && <AppHistory app={app} />}
                 {tab === 'sdk' && <AppSDK app={app} />}
+
+                <EditAppModal
+                    app={app}
+                    open={showEdit}
+                    onClose={() => setShowEdit(false)}
+                    onArchived={() => go('applications')}
+                />
             </div>
         </>
     );

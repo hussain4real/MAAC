@@ -8,6 +8,7 @@ use App\Models\Credential;
 use App\Models\LlmProvider;
 use App\Models\Project;
 use App\Models\ToolContract;
+use App\Support\MaacConsoleData;
 use Database\Seeders\MaacDemoSeeder;
 
 /**
@@ -99,4 +100,33 @@ test('the seeder is idempotent', function () {
         ->and(Agent::count())->toBe(8)
         ->and(ToolContract::count())->toBe(10)
         ->and(Credential::count())->toBe(5);
+});
+
+test('the console prop exposes record uuids and safe credentials for ui wiring', function () {
+    [, $team] = ownerAndTeam();
+    $application = Application::factory()->for($team)->create();
+    $project = Project::factory()->for($application)->create();
+    $model = LlmProvider::factory()->for($team)->create();
+    $agent = Agent::factory()->for($project)->for($model)->create();
+    $tool = ToolContract::factory()->for($team)->for($application)->create();
+    $credential = Credential::factory()->for($application)->create();
+
+    $data = MaacConsoleData::forTeam($team);
+
+    // Each entity exposes its UUID alongside the slug `id`, so the React forms
+    // can submit the related-record ids the FormRequests validate against.
+    $appData = collect($data['apps'])->firstWhere('id', $application->slug);
+    expect($appData['uuid'])->toBe($application->id)
+        ->and(collect($data['projects'])->firstWhere('id', $project->slug)['uuid'])->toBe($project->id)
+        ->and(collect($data['agents'])->firstWhere('id', $agent->slug)['uuid'])->toBe($agent->id)
+        ->and(collect($data['tools'])->firstWhere('id', $tool->slug)['uuid'])->toBe($tool->id)
+        ->and(collect($data['llms'])->firstWhere('id', $model->slug)['uuid'])->toBe($model->id);
+
+    // Applications carry safe credential records (no plaintext) so the
+    // credentials tab can drive rotate/revoke against a specific id.
+    expect($appData['credentials'])->toHaveCount(1);
+    $credentialData = $appData['credentials'][0];
+    expect($credentialData)->toHaveKeys(['id', 'clientId', 'status', 'environment'])
+        ->and($credentialData['id'])->toBe($credential->id)
+        ->and($credentialData)->not->toHaveKey('secret');
 });

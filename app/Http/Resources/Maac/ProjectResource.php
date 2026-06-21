@@ -22,6 +22,7 @@ class ProjectResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'uuid' => $this->id,
             'id' => $this->slug,
             'name' => $this->name,
             'appId' => $this->whenLoaded('application', fn () => $this->application->slug),

@@ -1,13 +1,20 @@
 /* ============================================================
    MAAC — Governance
    ============================================================ */
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
     approve as approveRequest,
     reject as rejectRequest,
+    store as requestApproval,
 } from '@/actions/App/Http/Controllers/Maac/ApprovalRequestController';
+import { update as updateGovernanceSettings } from '@/actions/App/Http/Controllers/Maac/GovernanceSettingController';
+import {
+    destroy as destroyQuota,
+    store as storeQuota,
+    update as updateQuota,
+} from '@/actions/App/Http/Controllers/Maac/QuotaLimitController';
 import { ScopeBanner } from '@/components/maac/common';
 import {
     Avatar,
@@ -15,10 +22,13 @@ import {
     Btn,
     Card,
     EmptyState,
+    Field,
+    Input,
     KV,
     Modal,
     PageHeader,
     SectionHeader,
+    Select,
     SensBadge,
     Table,
     Tabs,
@@ -29,11 +39,22 @@ import {
     SENS_TONE,
 } from '@/components/maac/ui';
 import type { TabDef, Tone } from '@/components/maac/ui';
-import type { ApprovalItem, Policy, Role, SensitivityLevel } from '@/maac/data';
+import type { ApprovalItem, Role, SensitivityLevel } from '@/maac/data';
+import {
+    APPROVAL_TYPE_OPTIONS,
+    ENV_OPTIONS,
+    FieldError,
+    QUOTA_SCOPE_OPTIONS,
+    toEnumValue,
+} from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
-import type { MaacAuditEvent, MaacOperational } from '@/types/global';
+import type {
+    MaacAuditEvent,
+    MaacOperational,
+    MaacQuota,
+} from '@/types/global';
 
 /* ── Local sub-components ─────────────────────────────────── */
 
@@ -263,6 +284,7 @@ function ApprovalDetail({ item }: { item: ApprovalItem }) {
 function ApprovalQueues({ A }: { A: ApprovalBuckets }) {
     const { currentTeam } = usePage().props;
     const [reviewing, setReviewing] = useState<ApprovalItem | null>(null);
+    const [showRequest, setShowRequest] = useState(false);
 
     const decide = (id: string, decision: 'approve' | 'reject') => {
         if (!currentTeam) {
@@ -317,6 +339,21 @@ function ApprovalQueues({ A }: { A: ApprovalBuckets }) {
 
     return (
         <>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    marginBottom: 12,
+                }}
+            >
+                <Btn
+                    variant="default"
+                    icon="plus"
+                    onClick={() => setShowRequest(true)}
+                >
+                    Request approval
+                </Btn>
+            </div>
             <div
                 style={{
                     display: 'grid',
@@ -543,6 +580,10 @@ function ApprovalQueues({ A }: { A: ApprovalBuckets }) {
                     <ApprovalDetail item={reviewing} />
                 </Modal>
             )}
+            <RequestApprovalModal
+                open={showRequest}
+                onClose={() => setShowRequest(false)}
+            />
         </>
     );
 }
@@ -642,55 +683,84 @@ function RolesPerms() {
     );
 }
 
-function PolicyRow({ policy, border }: { policy: Policy; border: boolean }) {
-    const [on, setOn] = useState(policy.on);
-
-    return (
-        <div
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                padding: '14px 16px',
-                borderTop: border ? '1px solid var(--border)' : 'none',
-            }}
-        >
-            <span
-                style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    background: on ? 'var(--teal-100)' : 'var(--surface-3)',
-                    color: on ? 'var(--teal-600)' : 'var(--text-3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                }}
-            >
-                <Icon name={on ? 'lock' : 'power'} size={16} />
-            </span>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>
-                    {policy.name}
-                </div>
-                <div
-                    style={{
-                        fontSize: 12,
-                        color: 'var(--text-3)',
-                        marginTop: 2,
-                    }}
-                >
-                    {policy.desc}
-                </div>
-            </div>
-            <Toggle on={on} onChange={setOn} />
-        </div>
-    );
-}
+type ToggleKey =
+    | 'mask_sensitive_inputs'
+    | 'mask_sensitive_outputs'
+    | 'block_restricted_logging';
+type RetentionKey =
+    | 'retain_prompts_days'
+    | 'retain_responses_days'
+    | 'retain_tool_arguments_days'
+    | 'retain_tool_results_days'
+    | 'audit_retention_days';
 
 function SecurityPolicies() {
     const MAAC = useMaacData();
+    const { currentTeam } = usePage().props;
+    const g = MAAC.governanceSettings;
+
+    const form = useForm<{
+        mask_sensitive_inputs: boolean;
+        mask_sensitive_outputs: boolean;
+        block_restricted_logging: boolean;
+        retain_prompts_days: number;
+        retain_responses_days: number;
+        retain_tool_arguments_days: number;
+        retain_tool_results_days: number;
+        audit_retention_days: number;
+        default_daily_run_quota: number | null;
+    }>({
+        mask_sensitive_inputs: g.maskSensitiveInputs,
+        mask_sensitive_outputs: g.maskSensitiveOutputs,
+        block_restricted_logging: g.blockRestrictedLogging,
+        retain_prompts_days: g.retainPromptsDays,
+        retain_responses_days: g.retainResponsesDays,
+        retain_tool_arguments_days: g.retainToolArgumentsDays,
+        retain_tool_results_days: g.retainToolResultsDays,
+        audit_retention_days: g.auditRetentionDays,
+        default_daily_run_quota: g.defaultDailyRunQuota,
+    });
+
+    const save = () => {
+        if (!currentTeam) {
+            return;
+        }
+
+        form.put(updateGovernanceSettings([currentTeam.slug]).url, {
+            preserveScroll: true,
+        });
+    };
+
+    const toggles: { key: ToggleKey; label: string; desc: string }[] = [
+        {
+            key: 'mask_sensitive_inputs',
+            label: 'Mask sensitive inputs',
+            desc: 'Redact Confidential+ run inputs before they are stored.',
+        },
+        {
+            key: 'mask_sensitive_outputs',
+            label: 'Mask sensitive tool results',
+            desc: 'Redact Confidential+ tool results at rest.',
+        },
+        {
+            key: 'block_restricted_logging',
+            label: 'Block restricted logging',
+            desc: 'Never write Restricted payloads to logs, even masked.',
+        },
+    ];
+    const retention: { key: RetentionKey; label: string }[] = [
+        { key: 'retain_prompts_days', label: 'Prompt retention (days)' },
+        { key: 'retain_responses_days', label: 'Response retention (days)' },
+        {
+            key: 'retain_tool_arguments_days',
+            label: 'Tool argument retention (days)',
+        },
+        {
+            key: 'retain_tool_results_days',
+            label: 'Tool result retention (days)',
+        },
+        { key: 'audit_retention_days', label: 'Audit log retention (days)' },
+    ];
 
     return (
         <div
@@ -701,17 +771,114 @@ function SecurityPolicies() {
             }}
         >
             <Card pad={false}>
-                <div style={{ padding: '14px 16px' }}>
+                <div
+                    style={{
+                        padding: '14px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        borderBottom: '1px solid var(--border)',
+                    }}
+                >
                     <SectionHeader
-                        title="Platform security policies"
+                        title="Data governance settings"
+                        sub="Masking, restricted-logging, and retention windows"
                         icon="shield"
                         style={{ marginBottom: 0 }}
                     />
+                    <Btn
+                        variant="primary"
+                        size="sm"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={save}
+                    >
+                        Save
+                    </Btn>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {(MAAC.policies as Policy[]).map((p, i) => (
-                        <PolicyRow key={p.name} policy={p} border={i > 0} />
+                    {toggles.map((t, i) => (
+                        <div
+                            key={t.key}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 14,
+                                padding: '14px 16px',
+                                borderTop: i
+                                    ? '1px solid var(--border)'
+                                    : 'none',
+                            }}
+                        >
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                                    {t.label}
+                                </div>
+                                <div
+                                    style={{
+                                        fontSize: 12,
+                                        color: 'var(--text-3)',
+                                        marginTop: 2,
+                                    }}
+                                >
+                                    {t.desc}
+                                </div>
+                            </div>
+                            <Toggle
+                                on={form.data[t.key]}
+                                onChange={(v) => form.setData(t.key, v)}
+                            />
+                        </div>
                     ))}
+                </div>
+                <div
+                    style={{
+                        padding: '16px',
+                        borderTop: '1px solid var(--border)',
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 14,
+                    }}
+                >
+                    {retention.map((r) => (
+                        <Field key={r.key} label={r.label} required>
+                            <Input
+                                type="number"
+                                min="1"
+                                max="3650"
+                                value={form.data[r.key]}
+                                onChange={(e) =>
+                                    form.setData(
+                                        r.key,
+                                        parseInt(e.target.value, 10) || 0,
+                                    )
+                                }
+                            />
+                            <FieldError error={form.errors[r.key]} />
+                        </Field>
+                    ))}
+                    <Field
+                        label="Default daily run quota"
+                        hint="Blank for no platform-wide default."
+                    >
+                        <Input
+                            type="number"
+                            min="1"
+                            value={form.data.default_daily_run_quota ?? ''}
+                            onChange={(e) =>
+                                form.setData(
+                                    'default_daily_run_quota',
+                                    e.target.value === ''
+                                        ? null
+                                        : parseInt(e.target.value, 10) || 0,
+                                )
+                            }
+                        />
+                        <FieldError
+                            error={form.errors.default_daily_run_quota}
+                        />
+                    </Field>
                 </div>
             </Card>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -763,30 +930,6 @@ function SecurityPolicies() {
                             Enforced platform-wide
                         </span>
                     </div>
-                </Card>
-                <Card>
-                    <SectionHeader title="Retention & audit" icon="eye" />
-                    <KV
-                        cols={1}
-                        items={[
-                            {
-                                k: 'Audit log retention',
-                                v: `${MAAC.governanceSettings.auditRetentionDays} days`,
-                            },
-                            {
-                                k: 'Prompt / response retention',
-                                v: `${MAAC.governanceSettings.retainPromptsDays} / ${MAAC.governanceSettings.retainResponsesDays} days`,
-                            },
-                            {
-                                k: 'Tool arg / result retention',
-                                v: `${MAAC.governanceSettings.retainToolArgumentsDays} / ${MAAC.governanceSettings.retainToolResultsDays} days`,
-                            },
-                            {
-                                k: 'Trace access',
-                                v: 'Security Reviewer + Auditor',
-                            },
-                        ]}
-                    />
                 </Card>
             </div>
         </div>
@@ -1054,6 +1197,424 @@ function AuditLog({
     );
 }
 
+function QuotaFormModal({
+    quota,
+    open,
+    onClose,
+}: {
+    quota?: MaacQuota;
+    open: boolean;
+    onClose: () => void;
+}) {
+    const { currentTeam } = usePage().props;
+    const isEdit = !!quota;
+    const form = useForm<{
+        scope: string;
+        subject_id: string;
+        environment: string;
+        max_runs_per_day: number | null;
+        max_tokens_per_day: number | null;
+        enabled: boolean;
+    }>({
+        scope: quota?.scopeKey ?? 'platform',
+        subject_id: quota?.subjectId ?? '',
+        environment: quota
+            ? quota.environment === 'All'
+                ? 'all'
+                : toEnumValue(quota.environment)
+            : 'all',
+        max_runs_per_day: quota?.maxRunsPerDay ?? null,
+        max_tokens_per_day: quota?.maxTokensPerDay ?? null,
+        enabled: quota?.enabled ?? true,
+    });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const submit = () => {
+        if (!currentTeam) {
+            return;
+        }
+
+        form.transform((data) => ({
+            ...data,
+            environment: data.environment === 'all' ? '' : data.environment,
+        }));
+
+        if (quota) {
+            form.put(updateQuota([currentTeam.slug, quota.id]).url, {
+                preserveScroll: true,
+                onSuccess: () => onClose(),
+            });
+
+            return;
+        }
+
+        form.post(storeQuota([currentTeam.slug]).url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                onClose();
+            },
+        });
+    };
+
+    const envOptions = [
+        { value: 'all', label: 'All environments' },
+        ...ENV_OPTIONS,
+    ];
+    const half = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 };
+
+    return (
+        <Modal
+            open={open}
+            onClose={close}
+            icon="bolt"
+            title={isEdit ? 'Edit quota' : 'New rate limit'}
+            sub="Cap daily runs or tokens by scope and environment."
+            footer={
+                <>
+                    <Btn variant="ghost" onClick={close}>
+                        Cancel
+                    </Btn>
+                    <Btn
+                        variant="primary"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        {isEdit ? 'Save changes' : 'Create quota'}
+                    </Btn>
+                </>
+            }
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={half}>
+                    <Field label="Scope" required>
+                        <Select
+                            value={form.data.scope}
+                            onChange={(v) => form.setData('scope', v)}
+                            options={QUOTA_SCOPE_OPTIONS}
+                        />
+                        <FieldError error={form.errors.scope} />
+                    </Field>
+                    <Field label="Environment">
+                        <Select
+                            value={form.data.environment}
+                            onChange={(v) => form.setData('environment', v)}
+                            options={envOptions}
+                        />
+                        <FieldError error={form.errors.environment} />
+                    </Field>
+                </div>
+                <Field
+                    label="Subject ID"
+                    hint="Slug/UUID of the scoped entity. Blank applies to the whole scope."
+                >
+                    <Input
+                        value={form.data.subject_id}
+                        onChange={(e) =>
+                            form.setData('subject_id', e.target.value)
+                        }
+                        placeholder="e.g. marine-ops-portal"
+                    />
+                    <FieldError error={form.errors.subject_id} />
+                </Field>
+                <div style={half}>
+                    <Field label="Max runs / day">
+                        <Input
+                            type="number"
+                            min="1"
+                            value={form.data.max_runs_per_day ?? ''}
+                            onChange={(e) =>
+                                form.setData(
+                                    'max_runs_per_day',
+                                    e.target.value === ''
+                                        ? null
+                                        : parseInt(e.target.value, 10) || 0,
+                                )
+                            }
+                        />
+                        <FieldError error={form.errors.max_runs_per_day} />
+                    </Field>
+                    <Field label="Max tokens / day">
+                        <Input
+                            type="number"
+                            min="1"
+                            value={form.data.max_tokens_per_day ?? ''}
+                            onChange={(e) =>
+                                form.setData(
+                                    'max_tokens_per_day',
+                                    e.target.value === ''
+                                        ? null
+                                        : parseInt(e.target.value, 10) || 0,
+                                )
+                            }
+                        />
+                        <FieldError error={form.errors.max_tokens_per_day} />
+                    </Field>
+                </div>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 14,
+                        padding: '4px 0',
+                    }}
+                >
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                            Enabled
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                            Disabled quotas are kept but not enforced.
+                        </div>
+                    </div>
+                    <Toggle
+                        on={form.data.enabled}
+                        onChange={(v) => form.setData('enabled', v)}
+                    />
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+function Quotas() {
+    const MAAC = useMaacData();
+    const { currentTeam } = usePage().props;
+    const [showCreate, setShowCreate] = useState(false);
+    const [editing, setEditing] = useState<MaacQuota | null>(null);
+    const quotas = MAAC.quotas;
+
+    const remove = (quota: MaacQuota) => {
+        if (currentTeam && window.confirm('Remove this rate limit?')) {
+            router.delete(destroyQuota([currentTeam.slug, quota.id]).url, {
+                preserveScroll: true,
+            });
+        }
+    };
+
+    return (
+        <div>
+            <Card pad={false}>
+                <div
+                    style={{
+                        padding: '14px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        borderBottom: quotas.length
+                            ? '1px solid var(--border)'
+                            : 'none',
+                    }}
+                >
+                    <SectionHeader
+                        title="Rate limits & quotas"
+                        sub="Daily run/token caps enforced at invocation"
+                        icon="bolt"
+                        style={{ marginBottom: 0 }}
+                    />
+                    <Btn
+                        variant="primary"
+                        size="sm"
+                        icon="plus"
+                        onClick={() => setShowCreate(true)}
+                    >
+                        New quota
+                    </Btn>
+                </div>
+                {quotas.length === 0 ? (
+                    <EmptyState
+                        icon="bolt"
+                        title="No quotas configured"
+                        desc="Add a rate limit to cap daily runs or tokens for an application, project, agent, or model."
+                    />
+                ) : (
+                    <Table
+                        columns={[
+                            { label: 'Scope' },
+                            { label: 'Subject' },
+                            { label: 'Environment' },
+                            { label: 'Runs / day', align: 'right' },
+                            { label: 'Tokens / day', align: 'right' },
+                            { label: 'Status' },
+                            { label: '', align: 'right' },
+                        ]}
+                    >
+                        {quotas.map((q) => (
+                            <Tr key={q.id}>
+                                <Td strong>{q.scope}</Td>
+                                <Td mono>{q.subjectId ?? '—'}</Td>
+                                <Td>
+                                    <Badge tone="neutral">
+                                        {q.environment}
+                                    </Badge>
+                                </Td>
+                                <Td align="right" mono>
+                                    {q.maxRunsPerDay ?? '—'}
+                                </Td>
+                                <Td align="right" mono>
+                                    {q.maxTokensPerDay ?? '—'}
+                                </Td>
+                                <Td>
+                                    <Badge
+                                        tone={q.enabled ? 'teal' : 'neutral'}
+                                        dot
+                                    >
+                                        {q.enabled ? 'Enabled' : 'Disabled'}
+                                    </Badge>
+                                </Td>
+                                <Td align="right">
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            gap: 6,
+                                            justifyContent: 'flex-end',
+                                        }}
+                                    >
+                                        <Btn
+                                            variant="ghost"
+                                            size="icon"
+                                            icon="edit"
+                                            style={{ height: 28, width: 28 }}
+                                            onClick={() => setEditing(q)}
+                                        />
+                                        <Btn
+                                            variant="ghost"
+                                            size="icon"
+                                            icon="trash"
+                                            style={{ height: 28, width: 28 }}
+                                            onClick={() => remove(q)}
+                                        />
+                                    </div>
+                                </Td>
+                            </Tr>
+                        ))}
+                    </Table>
+                )}
+            </Card>
+            <QuotaFormModal
+                open={showCreate}
+                onClose={() => setShowCreate(false)}
+            />
+            {editing && (
+                <QuotaFormModal
+                    key={editing.id}
+                    quota={editing}
+                    open
+                    onClose={() => setEditing(null)}
+                />
+            )}
+        </div>
+    );
+}
+
+function RequestApprovalModal({
+    open,
+    onClose,
+}: {
+    open: boolean;
+    onClose: () => void;
+}) {
+    const { currentTeam } = usePage().props;
+    const form = useForm({
+        type: 'agent_publication',
+        subject: '',
+        environment: 'production',
+        change: '',
+    });
+
+    const close = () => {
+        form.clearErrors();
+        onClose();
+    };
+
+    const submit = () => {
+        if (!currentTeam) {
+            return;
+        }
+
+        form.post(requestApproval([currentTeam.slug]).url, {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                onClose();
+            },
+        });
+    };
+
+    return (
+        <Modal
+            open={open}
+            onClose={close}
+            icon="shield"
+            title="Request approval"
+            sub="Open a governance approval for a sensitive change."
+            footer={
+                <>
+                    <Btn variant="ghost" onClick={close}>
+                        Cancel
+                    </Btn>
+                    <Btn
+                        variant="primary"
+                        icon="check"
+                        disabled={form.processing}
+                        onClick={submit}
+                    >
+                        Request approval
+                    </Btn>
+                </>
+            }
+        >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <Field label="Approval type" required>
+                    <Select
+                        value={form.data.type}
+                        onChange={(v) => form.setData('type', v)}
+                        options={APPROVAL_TYPE_OPTIONS}
+                    />
+                    <FieldError error={form.errors.type} />
+                </Field>
+                <Field
+                    label="Subject"
+                    required
+                    hint="Agent slug, tool slug, model slug, or credential id."
+                >
+                    <Input
+                        value={form.data.subject}
+                        onChange={(e) =>
+                            form.setData('subject', e.target.value)
+                        }
+                        placeholder="e.g. procurement-insight"
+                        style={{ fontFamily: 'var(--mono)' }}
+                    />
+                    <FieldError error={form.errors.subject} />
+                </Field>
+                <Field label="Environment">
+                    <Select
+                        value={form.data.environment}
+                        onChange={(v) => form.setData('environment', v)}
+                        options={ENV_OPTIONS}
+                    />
+                    <FieldError error={form.errors.environment} />
+                </Field>
+                <Field label="Change" hint="Optional — what is changing.">
+                    <Input
+                        value={form.data.change}
+                        onChange={(e) => form.setData('change', e.target.value)}
+                        placeholder="e.g. promote to Production"
+                    />
+                    <FieldError error={form.errors.change} />
+                </Field>
+            </div>
+        </Modal>
+    );
+}
+
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function Governance() {
@@ -1082,6 +1643,7 @@ export default function Governance() {
               },
               { id: 'roles', label: 'Roles & Permissions', icon: 'user' },
               { id: 'policies', label: 'Security Policies', icon: 'shield' },
+              { id: 'quotas', label: 'Rate Limits', icon: 'bolt' },
               { id: 'sensitivity', label: 'Data Sensitivity', icon: 'lock' },
               { id: 'audit', label: 'Audit Log', icon: 'eye' },
           ]
@@ -1112,6 +1674,7 @@ export default function Governance() {
                 {tab === 'approvals' && <ApprovalQueues A={A} />}
                 {tab === 'roles' && <RolesPerms />}
                 {tab === 'policies' && <SecurityPolicies />}
+                {tab === 'quotas' && <Quotas />}
                 {tab === 'sensitivity' && <DataSensitivity />}
                 {tab === 'audit' && (
                     <AuditLog

@@ -36,6 +36,8 @@ export type RunStatus =
     | 'queued';
 
 export type Llm = {
+    /** Stable database UUID — used as the value when submitting forms. */
+    uuid?: string;
     id: string;
     name: string;
     code: string;
@@ -51,7 +53,23 @@ export type Llm = {
     note: string;
 };
 
+/** Safe credential metadata (the hashed secret is never exposed). */
+export type Credential = {
+    id: string;
+    environment: Environment;
+    label: string | null;
+    clientId: string;
+    lastFour: string | null;
+    status: 'Active' | 'Revoked';
+    lastUsedAt?: string | null;
+    rotatedAt?: string | null;
+    revokedAt?: string | null;
+    createdAt?: string | null;
+};
+
 export type Application = {
+    /** Stable database UUID — used as the value when submitting forms. */
+    uuid?: string;
     id: string;
     name: string;
     code: string;
@@ -70,11 +88,15 @@ export type Application = {
     credStatus: 'Active' | 'Revoked';
     /** Humanized time of the application's most recent SDK sync, or null. */
     lastSyncedAt?: string | null;
+    /** Safe credential records for the application (no plaintext secrets). */
+    credentials?: Credential[];
     region: string;
     created: string;
 };
 
 export type Project = {
+    /** Stable database UUID — used as the value when submitting forms. */
+    uuid?: string;
     id: string;
     name: string;
     appId: string;
@@ -99,6 +121,8 @@ export type ToolImplementationRecord = {
 };
 
 export type Tool = {
+    /** Stable database UUID — used as the value when submitting forms. */
+    uuid?: string;
     id: string;
     name: string;
     scope: ToolScope;
@@ -121,6 +145,8 @@ export type Tool = {
 };
 
 export type Agent = {
+    /** Stable database UUID — used as the value when submitting forms. */
+    uuid?: string;
     id: string;
     name: string;
     projectId: string;

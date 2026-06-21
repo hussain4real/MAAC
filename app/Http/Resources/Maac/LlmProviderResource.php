@@ -23,6 +23,7 @@ class LlmProviderResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'uuid' => $this->id,
             'id' => $this->slug,
             'name' => $this->name,
             'code' => $this->code,
