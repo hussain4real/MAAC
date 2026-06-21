@@ -1207,6 +1207,7 @@ function QuotaFormModal({
     onClose: () => void;
 }) {
     const { currentTeam } = usePage().props;
+    const MAAC = useMaacData();
     const isEdit = !!quota;
     const form = useForm<{
         scope: string;
@@ -1228,9 +1229,49 @@ function QuotaFormModal({
         enabled: quota?.enabled ?? true,
     });
 
+    // Non-platform scopes match a run by the subject's UUID (QuotaGuard), so
+    // pick the real record rather than free-typing a slug that never matches.
+    const subjectOptionsFor = (scope: string) => {
+        switch (scope) {
+            case 'application':
+                return MAAC.apps.map((a) => ({
+                    value: a.uuid ?? a.id,
+                    label: a.name,
+                }));
+            case 'project':
+                return MAAC.projects.map((p) => ({
+                    value: p.uuid ?? p.id,
+                    label: p.name,
+                }));
+            case 'agent':
+                return MAAC.agents.map((a) => ({
+                    value: a.uuid ?? a.id,
+                    label: a.name,
+                }));
+            case 'model':
+                return MAAC.llms.map((l) => ({
+                    value: l.uuid ?? l.id,
+                    label: l.name,
+                }));
+            default:
+                return [];
+        }
+    };
+    const requiresSubject = form.data.scope !== 'platform';
+    const subjectOptions = subjectOptionsFor(form.data.scope);
+
     const close = () => {
         form.clearErrors();
         onClose();
+    };
+
+    const setScope = (scope: string) => {
+        form.setData('scope', scope);
+        const options = subjectOptionsFor(scope);
+        form.setData(
+            'subject_id',
+            scope === 'platform' ? '' : (options[0]?.value ?? ''),
+        );
     };
 
     const submit = () => {
@@ -1295,7 +1336,7 @@ function QuotaFormModal({
                     <Field label="Scope" required>
                         <Select
                             value={form.data.scope}
-                            onChange={(v) => form.setData('scope', v)}
+                            onChange={setScope}
                             options={QUOTA_SCOPE_OPTIONS}
                         />
                         <FieldError error={form.errors.scope} />
@@ -1309,19 +1350,20 @@ function QuotaFormModal({
                         <FieldError error={form.errors.environment} />
                     </Field>
                 </div>
-                <Field
-                    label="Subject ID"
-                    hint="Slug/UUID of the scoped entity. Blank applies to the whole scope."
-                >
-                    <Input
-                        value={form.data.subject_id}
-                        onChange={(e) =>
-                            form.setData('subject_id', e.target.value)
-                        }
-                        placeholder="e.g. marine-ops-portal"
-                    />
-                    <FieldError error={form.errors.subject_id} />
-                </Field>
+                {requiresSubject && (
+                    <Field
+                        label="Subject"
+                        required
+                        hint={`Which ${form.data.scope} this quota limits.`}
+                    >
+                        <Select
+                            value={form.data.subject_id}
+                            onChange={(v) => form.setData('subject_id', v)}
+                            options={subjectOptions}
+                        />
+                        <FieldError error={form.errors.subject_id} />
+                    </Field>
+                )}
                 <div style={half}>
                     <Field label="Max runs / day">
                         <Input

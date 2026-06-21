@@ -83,6 +83,17 @@ function StepBasic({ data, set, errors }: StepProps) {
     const apps: Application[] = scope.apps.length ? scope.apps : MAAC.apps;
     const projs: Project[] = scope.projects.filter((p) => p.appId === data.app);
 
+    // A project restricts which approved models its agents may use; drop the
+    // selected model when it falls outside the newly chosen project's list.
+    const chooseProject = (projectSlug: string) => {
+        set('project', projectSlug);
+        const allowed = MAAC.projectById(projectSlug)?.llms ?? [];
+
+        if (allowed.length > 0 && !allowed.includes(data.llm)) {
+            set('llm', allowed[0]);
+        }
+    };
+
     return (
         <div>
             <StepHeader
@@ -149,7 +160,7 @@ function StepBasic({ data, set, errors }: StepProps) {
                     <Field label="Project" required>
                         <Select
                             value={data.project}
-                            onChange={(v) => set('project', v)}
+                            onChange={chooseProject}
                             options={(projs.length
                                 ? projs
                                 : MAAC.projectsByApp(data.app)
@@ -251,13 +262,27 @@ function StepPrompt({ data, set }: StepProps) {
 /* ── StepLLM ───────────────────────────────────────────────── */
 function StepLLM({ data, set }: StepProps) {
     const MAAC = useMaacData();
+    // Restrict to the models the selected project allows (empty = no
+    // restriction), so an agent can't be created with a disallowed model.
+    const allowed = MAAC.projectById(data.project)?.llms ?? [];
+    const models = MAAC.llms.filter(
+        (l: Llm) =>
+            l.status === 'Approved' &&
+            (allowed.length === 0 || allowed.includes(l.id)),
+    );
 
     return (
         <div>
             <StepHeader
                 title="Select LLM"
-                sub="Choose from the company-approved model catalog. Availability may be restricted by project."
+                sub="Choose from the approved models this project allows."
             />
+            {models.length === 0 && (
+                <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
+                    This project has no approved models available. Add one to
+                    the project's allowed models first.
+                </div>
+            )}
             <div
                 style={{
                     display: 'grid',
@@ -265,118 +290,116 @@ function StepLLM({ data, set }: StepProps) {
                     gap: 12,
                 }}
             >
-                {MAAC.llms
-                    .filter((l: Llm) => l.status === 'Approved')
-                    .map((l: Llm) => {
-                        const on = data.llm === l.id;
+                {models.map((l: Llm) => {
+                    const on = data.llm === l.id;
 
-                        return (
-                            <div
-                                key={l.id}
-                                onClick={() => set('llm', l.id)}
-                                style={{
-                                    cursor: 'pointer',
-                                    padding: '14px 15px',
-                                    borderRadius: 'var(--r-lg)',
-                                    border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
-                                    background: on
-                                        ? 'var(--primary-soft)'
-                                        : 'var(--surface)',
-                                    transition: 'all .12s',
-                                    position: 'relative',
-                                }}
-                            >
-                                {on && (
-                                    <span
-                                        style={{
-                                            position: 'absolute',
-                                            top: 12,
-                                            right: 12,
-                                            width: 20,
-                                            height: 20,
-                                            borderRadius: 999,
-                                            background: 'var(--primary)',
-                                            color: '#fff',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                        }}
-                                    >
-                                        <Icon
-                                            name="check"
-                                            size={13}
-                                            strokeWidth={3}
-                                        />
-                                    </span>
-                                )}
-                                <div
+                    return (
+                        <div
+                            key={l.id}
+                            onClick={() => set('llm', l.id)}
+                            style={{
+                                cursor: 'pointer',
+                                padding: '14px 15px',
+                                borderRadius: 'var(--r-lg)',
+                                border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
+                                background: on
+                                    ? 'var(--primary-soft)'
+                                    : 'var(--surface)',
+                                transition: 'all .12s',
+                                position: 'relative',
+                            }}
+                        >
+                            {on && (
+                                <span
                                     style={{
+                                        position: 'absolute',
+                                        top: 12,
+                                        right: 12,
+                                        width: 20,
+                                        height: 20,
+                                        borderRadius: 999,
+                                        background: 'var(--primary)',
+                                        color: '#fff',
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: 9,
-                                        marginBottom: 8,
+                                        justifyContent: 'center',
                                     }}
                                 >
-                                    <span
+                                    <Icon
+                                        name="check"
+                                        size={13}
+                                        strokeWidth={3}
+                                    />
+                                </span>
+                            )}
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 9,
+                                    marginBottom: 8,
+                                }}
+                            >
+                                <span
+                                    style={{
+                                        width: 30,
+                                        height: 30,
+                                        borderRadius: 8,
+                                        background: 'var(--navy-900)',
+                                        color: '#fff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                    }}
+                                >
+                                    <Icon name="llm" size={16} />
+                                </span>
+                                <div>
+                                    <div
                                         style={{
-                                            width: 30,
-                                            height: 30,
-                                            borderRadius: 8,
-                                            background: 'var(--navy-900)',
-                                            color: '#fff',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
+                                            fontSize: 13.5,
+                                            fontWeight: 700,
                                         }}
                                     >
-                                        <Icon name="llm" size={16} />
-                                    </span>
-                                    <div>
-                                        <div
-                                            style={{
-                                                fontSize: 13.5,
-                                                fontWeight: 700,
-                                            }}
-                                        >
-                                            {l.name}
-                                        </div>
-                                        <div
-                                            style={{
-                                                fontSize: 11,
-                                                color: 'var(--text-3)',
-                                            }}
-                                        >
-                                            {l.provider}
-                                        </div>
+                                        {l.name}
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: 11,
+                                            color: 'var(--text-3)',
+                                        }}
+                                    >
+                                        {l.provider}
                                     </div>
                                 </div>
-                                <div
-                                    style={{
-                                        fontSize: 12,
-                                        color: 'var(--text-2)',
-                                        lineHeight: 1.45,
-                                        marginBottom: 10,
-                                        minHeight: 34,
-                                    }}
-                                >
-                                    {l.note}
-                                </div>
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        flexWrap: 'wrap',
-                                        gap: 6,
-                                    }}
-                                >
-                                    <Badge tone="neutral">Ctx {l.ctx}</Badge>
-                                    <Badge tone="neutral">
-                                        ${l.inCost}/{l.outCost} per 1M
-                                    </Badge>
-                                    <SensBadge level={l.sensitivity} />
-                                </div>
                             </div>
-                        );
-                    })}
+                            <div
+                                style={{
+                                    fontSize: 12,
+                                    color: 'var(--text-2)',
+                                    lineHeight: 1.45,
+                                    marginBottom: 10,
+                                    minHeight: 34,
+                                }}
+                            >
+                                {l.note}
+                            </div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: 6,
+                                }}
+                            >
+                                <Badge tone="neutral">Ctx {l.ctx}</Badge>
+                                <Badge tone="neutral">
+                                    ${l.inCost}/{l.outCost} per 1M
+                                </Badge>
+                                <SensBadge level={l.sensitivity} />
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -843,6 +866,20 @@ export default function CreateAgent() {
 
     const submit = () => {
         if (!team) {
+            return;
+        }
+
+        // Enforce the project's allowed-model list before posting (the wizard
+        // also filters the LLM step, but never trust stale state).
+        const allowedModels = MAAC.projectById(data.project)?.llms ?? [];
+
+        if (allowedModels.length > 0 && !allowedModels.includes(data.llm)) {
+            setErrors({
+                llm_provider_id:
+                    'The selected model is not in this project’s allowed list.',
+            });
+            setStep(2);
+
             return;
         }
 
