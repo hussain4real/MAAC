@@ -63,6 +63,8 @@ test('fetch transport surfaces the underlying network failure', async () => {
       (error: unknown) => {
         assert.ok(error instanceof TransportError);
         assert.match(error.message, /unable to verify the first certificate/);
+        assert.match(error.message, /NODE_EXTRA_CA_CERTS/);
+        assert.match(error.message, /Node 22\+/);
         assert.match(error.message, /--use-system-ca/);
 
         return true;
