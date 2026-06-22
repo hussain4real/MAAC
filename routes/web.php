@@ -32,6 +32,7 @@ Route::prefix('{current_team}')
         Route::get('tools', [ConsoleController::class, 'tools'])->name('tools');
         Route::get('tools/{tool}', [ConsoleController::class, 'tool'])->name('tools.show');
         Route::get('sdk', [ConsoleController::class, 'sdk'])->name('sdk');
+        Route::get('sdk/docs', [ConsoleController::class, 'sdkDocs'])->name('sdk.docs');
         Route::get('playground', [ConsoleController::class, 'playground'])->name('playground');
         Route::get('runs', [ConsoleController::class, 'runs'])->name('runs');
         Route::get('runs/{run}', [ConsoleController::class, 'run'])->name('runs.show');

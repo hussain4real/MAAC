@@ -23,6 +23,7 @@ function maacScreens(): array
         ['tools', [], 'maac/tools/index'],
         ['tools.show', ['tool' => 'getOperationalRecords'], 'maac/tools/show'],
         ['sdk', [], 'maac/sdk'],
+        ['sdk.docs', [], 'maac/sdk-docs'],
         ['playground', [], 'maac/playground'],
         ['runs', [], 'maac/runs/index'],
         ['runs.show', ['run' => 'run_8fa31c'], 'maac/runs/show'],

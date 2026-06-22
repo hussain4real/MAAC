@@ -62,6 +62,11 @@ class ConsoleController extends Controller
         return Inertia::render('maac/sdk');
     }
 
+    public function sdkDocs(): Response
+    {
+        return Inertia::render('maac/sdk-docs');
+    }
+
     public function playground(): Response
     {
         return Inertia::render('maac/playground');

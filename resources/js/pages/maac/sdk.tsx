@@ -781,7 +781,11 @@ export default function SDKCenter() {
                     title="SDK Implementation Center"
                     sub="The integration checklist for application developers — exactly which client-side tools to implement, their schemas, and copy-paste SDK stubs."
                     actions={
-                        <Btn variant="default" icon="book">
+                        <Btn
+                            variant="default"
+                            icon="book"
+                            onClick={() => go('sdkDocs')}
+                        >
                             SDK Docs
                         </Btn>
                     }

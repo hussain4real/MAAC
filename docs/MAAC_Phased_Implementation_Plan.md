@@ -321,6 +321,7 @@ Support long-running and interactive agent experiences without weakening auditab
 - [ ] Persist delivery attempts, replay state, webhook signatures, and failure reasons.
 - [ ] Add SDK support for polling, webhooks, and streaming with resumable error handling.
 - [ ] Add E2E tests from external reference apps for async, polling, webhook, and streaming paths.
+- [ ] Update the SDK docs (`resources/js/pages/maac/sdk-docs.tsx` + `docs/MAAC_SDK_Integration_Guide.md`): move async / webhook / streaming from "Coming soon" to Supported in the compatibility matrix and document its usage + examples.
 
 #### Deliverables
 
@@ -350,6 +351,7 @@ Expand beyond client-side and MAAC-hosted tools while preserving the same tool-c
 - [ ] Add reference connector integration tests that execute an MCP-backed tool from an external application context.
 - [ ] Add controlled failures for unreachable endpoints, blocked domains, invalid connector output, unauthorized connector access, and connector timeout.
 - [ ] Update SDK manifests so external apps can distinguish client-side tools from MAAC-hosted, remote HTTP, and MCP-backed tools.
+- [ ] Update the SDK docs (`resources/js/pages/maac/sdk-docs.tsx` + `docs/MAAC_SDK_Integration_Guide.md`): move remote HTTP & MCP tools from "Coming soon" to Supported in the compatibility matrix and document them + examples.
 
 #### Deliverables
 
@@ -507,6 +509,7 @@ Make every MAAC console action button perform its real, governed action end-to-e
 - Keep tool input/output schemas versioned and validate runtime arguments/results at every boundary.
 - Capture audit events for administrative changes and runtime events from the start of persistent implementation.
 - Add focused Pest feature tests with each phase. Use browser smoke tests for major Inertia screen coverage.
+- Keep user-facing docs current as part of the phase that ships a capability. When a phase implements something listed as "Coming soon" in the SDK docs, update the SDK docs page (`resources/js/pages/maac/sdk-docs.tsx`) and the `docs/MAAC_SDK_Integration_Guide.md` compatibility matrix in the same phase — move it from "Coming soon" to Supported and add usage/examples. **User-facing docs must never reference internal phase numbers** (say "Coming soon", not "Phase 6D/6E").
 
 ## Validation For This Document
 
