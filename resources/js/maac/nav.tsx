@@ -35,6 +35,7 @@ export type RouteName =
     | 'tools'
     | 'tool'
     | 'sdk'
+    | 'sdkDocs'
     | 'playground'
     | 'runs'
     | 'run'
@@ -115,6 +116,8 @@ function urlFor(name: RouteName, team: string, params: GoParams = {}): string {
             return ConsoleRoutes.tool.url({ current_team: team, tool: id });
         case 'sdk':
             return ConsoleRoutes.sdk.url(team);
+        case 'sdkDocs':
+            return ConsoleRoutes.sdkDocs.url(team);
         case 'playground':
             return ConsoleRoutes.playground.url(
                 team,
