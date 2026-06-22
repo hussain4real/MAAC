@@ -22,11 +22,13 @@ node reference-apps/node-consumer/bin/run.ts "Summarize current port operations"
 ```
 
 If local Herd HTTPS fails with `fetch failed` or
-`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, run Node with the system certificate store:
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, point Node at Herd's local CA certificate:
 
 ```bash
-NODE_OPTIONS=--use-system-ca node reference-apps/node-consumer/bin/run.ts "Summarize current port operations"
+NODE_EXTRA_CA_CERTS="$HOME/Library/Application Support/Herd/config/valet/CA/LaravelValetCASelfSigned.pem" node reference-apps/node-consumer/bin/run.ts "Summarize current port operations"
 ```
+
+On Node 22+, `NODE_OPTIONS=--use-system-ca` is also supported.
 
 The client-side `fetch-records` tool is implemented in
 [`fetchRecordsHandler.ts`](src/fetchRecordsHandler.ts). When MAAC pauses for it,

@@ -108,7 +108,7 @@ function fetchCause(error: unknown): FetchCause {
 
 function fetchHint(cause: FetchCause): string {
   if (cause.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || cause.message.includes('certificate')) {
-    return ' If this is local Laravel Herd HTTPS, run Node with --use-system-ca or set NODE_OPTIONS=--use-system-ca.';
+    return ' If this is local Laravel Herd HTTPS, set NODE_EXTRA_CA_CERTS to the Herd CA certificate. On Node 22+, you can alternatively run Node with --use-system-ca or set NODE_OPTIONS=--use-system-ca.';
   }
 
   if (cause.code === 'ENOTFOUND') {
