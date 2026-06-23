@@ -59,6 +59,14 @@ class RuntimeRequestException extends RuntimeException
     }
 
     /**
+     * The requested webhook endpoint could not be found for the application.
+     */
+    public static function webhookEndpointNotFound(): self
+    {
+        return new self('webhook_endpoint_not_found', 'No webhook endpoint matches the given identifier for this application.', 404);
+    }
+
+    /**
      * The submitted tool result exceeds the contract's payload size limit.
      */
     public static function payloadTooLarge(): self

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Environment;
+use App\Enums\RunMode;
 use App\Enums\RunStatus;
 use App\Enums\Sensitivity;
 use App\Enums\ToolCallStatus;
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $llm_provider_id
  * @property string $slug
  * @property string|null $caller
+ * @property RunMode $mode
  * @property Environment|null $environment
  * @property Sensitivity $sensitivity
  * @property RunStatus $status
@@ -50,7 +52,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, ToolCall> $toolCalls
  * @property-read Collection<int, TraceEvent> $traceEvents
  */
-#[Fillable(['agent_id', 'project_id', 'application_id', 'llm_provider_id', 'slug', 'caller', 'environment', 'sensitivity', 'status', 'tokens_in', 'tokens_out', 'cost', 'latency_ms', 'tools', 'input', 'output', 'state', 'error', 'failure_reason', 'masked', 'started_at', 'completed_at', 'expires_at'])]
+#[Fillable(['agent_id', 'project_id', 'application_id', 'llm_provider_id', 'slug', 'caller', 'mode', 'environment', 'sensitivity', 'status', 'tokens_in', 'tokens_out', 'cost', 'latency_ms', 'tools', 'input', 'output', 'state', 'error', 'failure_reason', 'masked', 'started_at', 'completed_at', 'expires_at'])]
 class AgentRun extends Model
 {
     /** @use HasFactory<AgentRunFactory> */
@@ -135,6 +137,14 @@ class AgentRun extends Model
     }
 
     /**
+     * Determine whether the run is driven asynchronously by a queued worker.
+     */
+    public function isAsync(): bool
+    {
+        return $this->mode === RunMode::Async;
+    }
+
+    /**
      * Determine whether the run has passed its expiry deadline without finishing.
      */
     public function hasExpired(): bool
@@ -160,6 +170,7 @@ class AgentRun extends Model
     protected function casts(): array
     {
         return [
+            'mode' => RunMode::class,
             'environment' => Environment::class,
             'sensitivity' => Sensitivity::class,
             'status' => RunStatus::class,

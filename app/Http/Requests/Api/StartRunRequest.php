@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Api;
 
+use App\Enums\RunMode;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Validates a runtime invocation request. The caller is authenticated by the
@@ -28,6 +30,7 @@ class StartRunRequest extends FormRequest
         return [
             'input' => ['required', 'string', 'max:8000'],
             'caller' => ['nullable', 'string', 'max:255'],
+            'mode' => ['nullable', Rule::enum(RunMode::class)],
         ];
     }
 
@@ -47,5 +50,15 @@ class StartRunRequest extends FormRequest
         $caller = $this->validated('caller');
 
         return is_string($caller) ? $caller : null;
+    }
+
+    /**
+     * The invocation mode, defaulting to a synchronous (request-blocking) run.
+     */
+    public function mode(): RunMode
+    {
+        $mode = $this->validated('mode');
+
+        return is_string($mode) ? RunMode::from($mode) : RunMode::Sync;
     }
 }

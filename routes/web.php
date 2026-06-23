@@ -11,6 +11,8 @@ use App\Http\Controllers\Maac\LlmProviderController;
 use App\Http\Controllers\Maac\ProjectController;
 use App\Http\Controllers\Maac\QuotaLimitController;
 use App\Http\Controllers\Maac\ToolContractController;
+use App\Http\Controllers\Maac\WebhookDeliveryController;
+use App\Http\Controllers\Maac\WebhookEndpointController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureTeamMembership;
 use Illuminate\Support\Facades\Route;
@@ -38,6 +40,7 @@ Route::prefix('{current_team}')
         Route::get('runs/{run}', [ConsoleController::class, 'run'])->name('runs.show');
         Route::get('llm-providers', [ConsoleController::class, 'llmProviders'])->name('llm-providers');
         Route::get('governance', [ConsoleController::class, 'governance'])->name('governance');
+        Route::get('webhooks', [ConsoleController::class, 'webhooks'])->name('webhooks');
         Route::get('platform-settings', [ConsoleController::class, 'settings'])->name('platform-settings');
 
         // MAAC console (Phase 2 — database-backed writes)
@@ -63,6 +66,13 @@ Route::prefix('{current_team}')
         Route::resource('quotas', QuotaLimitController::class)
             ->only(['store', 'update', 'destroy'])
             ->parameters(['quotas' => 'quotaLimit']);
+
+        // MAAC console (Phase 6D — webhook endpoints & delivery observability)
+        Route::resource('webhooks', WebhookEndpointController::class)
+            ->only(['store', 'update', 'destroy'])
+            ->parameters(['webhooks' => 'webhookEndpoint']);
+        Route::post('webhooks/{webhookEndpoint}/rotate', [WebhookEndpointController::class, 'rotate'])->name('webhooks.rotate');
+        Route::post('webhook-deliveries/{webhookDelivery}/replay', [WebhookDeliveryController::class, 'replay'])->name('webhook-deliveries.replay');
     });
 
 Route::middleware(['auth'])->group(function () {

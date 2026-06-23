@@ -1,11 +1,11 @@
 export { MaacClient } from './client.ts';
-export type { MaacConfig } from './client.ts';
+export type { AsyncRunOptions, MaacConfig } from './client.ts';
 export { fetchTransport } from './transport.ts';
 export type { HttpRequest, HttpResponse, Transport } from './transport.ts';
 export { ToolHandlerRegistry } from './registry.ts';
 export type { ToolContext, ToolHandler } from './registry.ts';
 export { MaacApiError, MaacError, MissingToolHandlerError, RunNotResolvedError, TransportError } from './errors.ts';
-export { findAgent, findTool, isCompleted, isImplemented, isSdkCompatible, isTerminal, isWaiting } from './types.ts';
+export { findAgent, findTool, isCompleted, isImplemented, isSdkCompatible, isSettled, isTerminal, isWaiting } from './types.ts';
 export type {
   ImplementationReport,
   ImplementationResult,
@@ -15,10 +15,14 @@ export type {
   ManifestTool,
   ManifestToolImplementation,
   Run,
+  RunEvent,
+  RunMode,
   RunStatus,
   SdkCompatibility,
   ToolCall,
+  WebhookEndpoint,
 } from './types.ts';
+export { signWebhook, verifyWebhook } from './webhooks.ts';
 export { SDK_LANGUAGE, SDK_VERSION } from './version.ts';
 export {
   baseType,

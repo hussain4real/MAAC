@@ -17,6 +17,7 @@ import type {
     MaacOperational,
     MaacQuota,
     MaacSdkCompatibility,
+    MaacWebhookEndpoint,
 } from '@/types/global';
 import { MAAC as FIXTURE } from './data';
 import type { Agent, Application, Llm, Project, Run, Tool } from './data';
@@ -97,6 +98,7 @@ export type MaacData = MaacDataset & {
     governanceSettings: MaacGovernanceSettings;
     quotas: MaacQuota[];
     sdkCompatibility: MaacSdkCompatibility;
+    webhooks: MaacWebhookEndpoint[];
     execModeLabel: typeof FIXTURE.execModeLabel;
     implLabel: typeof FIXTURE.implLabel;
     byId: <T extends { id: string }>(list: T[], id: string) => T | undefined;
@@ -130,6 +132,7 @@ export function useMaacData(): MaacData {
             governanceSettings: maac?.governanceSettings ?? DEFAULT_SETTINGS,
             quotas: maac?.quotas ?? [],
             sdkCompatibility: maac?.sdkCompatibility ?? EMPTY_SDK_COMPATIBILITY,
+            webhooks: maac?.webhooks ?? [],
             execModeLabel: FIXTURE.execModeLabel,
             implLabel: FIXTURE.implLabel,
             byId: <T extends { id: string }>(list: T[], id: string) =>

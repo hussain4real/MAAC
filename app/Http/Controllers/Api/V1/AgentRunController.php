@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\RunMode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StartRunRequest;
+use App\Jobs\ProcessAgentRun;
 use App\Support\Governance\QuotaGuard;
 use App\Support\Runtime\AgentRunner;
 use App\Support\Runtime\RunAuthorizer;
@@ -21,7 +23,10 @@ use Illuminate\Http\Request;
 class AgentRunController extends Controller
 {
     /**
-     * Start a run for the given published agent.
+     * Start a run for the given published agent. A synchronous run blocks until
+     * it reaches a boundary and is returned `201`; an asynchronous run is queued
+     * for a worker and returned `202`, to be observed via polling, streaming, or
+     * a webhook.
      */
     public function store(StartRunRequest $request, RunAuthorizer $authorizer, QuotaGuard $quota, AgentRunner $runner, string $agentSlug): JsonResponse
     {
@@ -29,6 +34,13 @@ class AgentRunController extends Controller
         $agent = $authorizer->resolveAgent($context->application, $agentSlug);
 
         $quota->assert($context->application, $agent, $context->environment);
+
+        if ($request->mode() === RunMode::Async) {
+            $run = $runner->createRun($agent, $context->application, $context->environment, $request->runInput(), $request->caller(), RunMode::Async);
+            ProcessAgentRun::dispatch($run);
+
+            return new JsonResponse(RunPayload::for($run), 202);
+        }
 
         $run = $runner->start($agent, $context->application, $context->environment, $request->runInput(), $request->caller());
 

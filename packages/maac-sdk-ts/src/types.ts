@@ -22,6 +22,9 @@ export type RunStatus =
   | 'expired'
   | 'cancelled';
 
+/** How a run is invoked: a blocking `sync` run or a worker-backed `async` run. */
+export type RunMode = 'sync' | 'async';
+
 export interface ToolCall {
   id: string;
   tool: string;
@@ -104,6 +107,22 @@ export interface ImplementationResult {
   [key: string]: unknown;
 }
 
+/** A webhook endpoint registered with MAAC. `secret` is present only on registration. */
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  events: string[];
+  environment: string;
+  status: string;
+  secret: string | null;
+}
+
+/** A single Server-Sent Event from a run stream. */
+export interface RunEvent {
+  event: string;
+  data: Record<string, unknown>;
+}
+
 const TERMINAL_STATUSES: ReadonlyArray<string> = ['completed', 'failed', 'expired', 'cancelled'];
 
 /** Whether the run is paused awaiting a client-side tool result. */
@@ -119,6 +138,14 @@ export function isCompleted(run: Run): boolean {
 /** Whether the run reached a terminal status and will not change again. */
 export function isTerminal(run: Run): boolean {
   return TERMINAL_STATUSES.includes(run.status);
+}
+
+/**
+ * Whether the run has reached a decision point a poller should stop on: it is
+ * terminal, or it is paused waiting for a client-side tool result.
+ */
+export function isSettled(run: Run): boolean {
+  return isTerminal(run) || isWaiting(run);
 }
 
 /** Find a manifest tool by slug. */

@@ -41,6 +41,7 @@ export type RouteName =
     | 'run'
     | 'llm'
     | 'governance'
+    | 'webhooks'
     | 'settings';
 
 type GoParams = { id?: string; agent?: string } & Record<
@@ -86,6 +87,7 @@ const SEGMENT_TO_SCREEN: Record<string, ScreenId> = {
     runs: 'runs',
     'llm-providers': 'llm',
     governance: 'governance',
+    webhooks: 'webhooks',
     'platform-settings': 'settings',
 };
 
@@ -131,6 +133,8 @@ function urlFor(name: RouteName, team: string, params: GoParams = {}): string {
             return ConsoleRoutes.llmProviders.url(team);
         case 'governance':
             return ConsoleRoutes.governance.url(team);
+        case 'webhooks':
+            return ConsoleRoutes.webhooks.url(team);
         case 'settings':
             return ConsoleRoutes.settings.url(team);
     }

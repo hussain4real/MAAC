@@ -17,6 +17,7 @@ export type ScreenId =
     | 'runs'
     | 'llm'
     | 'governance'
+    | 'webhooks'
     | 'settings';
 
 export type NavItem = { id: ScreenId; label: string; icon: string };
@@ -47,6 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
         title: 'Operate',
         items: [
             { id: 'runs', label: 'Runs & Audit Logs', icon: 'runs' },
+            { id: 'webhooks', label: 'Webhooks', icon: 'send' },
             { id: 'llm', label: 'LLM Providers', icon: 'llm' },
         ],
     },
@@ -76,6 +78,7 @@ export const SCREEN_OF: Record<string, ScreenId> = {
     run: 'runs',
     llm: 'llm',
     governance: 'governance',
+    webhooks: 'webhooks',
     settings: 'settings',
 };
 
@@ -141,6 +144,7 @@ const ROLE_ALLOWED: Record<PersonaId, ScreenId[] | null> = {
         'playground',
         'runs',
         'governance',
+        'webhooks',
         'settings',
     ],
     dev: [

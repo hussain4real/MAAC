@@ -84,4 +84,13 @@ final class Run
             self::STATUS_CANCELLED,
         ], true);
     }
+
+    /**
+     * Whether the run has reached a decision point a poller should stop on: it
+     * is terminal, or it is paused waiting for a client-side tool result.
+     */
+    public function isSettled(): bool
+    {
+        return $this->isTerminal() || $this->isWaiting();
+    }
 }

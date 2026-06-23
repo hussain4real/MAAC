@@ -47,6 +47,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, ToolImplementation> $toolImplementations
  * @property-read Collection<int, Agent> $agents
  * @property-read Collection<int, AgentRun> $runs
+ * @property-read Collection<int, WebhookEndpoint> $webhookEndpoints
  */
 #[Fillable(['team_id', 'slug', 'code', 'name', 'department', 'owner_name', 'owner_email', 'environment', 'status', 'stack', 'description', 'region', 'last_connected_at', 'projects_count', 'agents_count', 'tools_required', 'tools_implemented'])]
 class Application extends Model
@@ -122,6 +123,16 @@ class Application extends Model
     public function runs(): HasMany
     {
         return $this->hasMany(AgentRun::class);
+    }
+
+    /**
+     * Get the application's registered webhook endpoints.
+     *
+     * @return HasMany<WebhookEndpoint, $this>
+     */
+    public function webhookEndpoints(): HasMany
+    {
+        return $this->hasMany(WebhookEndpoint::class);
     }
 
     /**

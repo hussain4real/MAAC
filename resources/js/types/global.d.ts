@@ -176,6 +176,42 @@ export interface MaacSdkCompatibility {
     drift: MaacSdkDrift[];
 }
 
+/** A single webhook delivery attempt (Phase 6D). */
+export interface MaacWebhookDelivery {
+    id: string;
+    event: string;
+    eventLabel: string;
+    status: string;
+    statusLabel: string;
+    attempts: number;
+    responseStatus: number | null;
+    error: string | null;
+    runId: string | null;
+    lastAttemptedAt: string | null;
+    deliveredAt: string | null;
+    createdAt: string | null;
+    replayable: boolean;
+}
+
+/** A registered webhook endpoint and its recent delivery history (Phase 6D). */
+export interface MaacWebhookEndpoint {
+    id: string;
+    uuid: string;
+    appId: string | null;
+    appName: string | null;
+    environment: string;
+    url: string;
+    events: string[];
+    status: string;
+    statusLabel: string;
+    description: string | null;
+    lastFour: string | null;
+    lastDeliveredAt: string | null;
+    lastFailedAt: string | null;
+    createdAt: string | null;
+    deliveries: MaacWebhookDelivery[];
+}
+
 export interface MaacProp {
     apps: Application[];
     projects: Project[];
@@ -192,6 +228,7 @@ export interface MaacProp {
     governanceSettings: MaacGovernanceSettings;
     quotas: MaacQuota[];
     sdkCompatibility: MaacSdkCompatibility;
+    webhooks: MaacWebhookEndpoint[];
 }
 
 declare module '@inertiajs/core' {

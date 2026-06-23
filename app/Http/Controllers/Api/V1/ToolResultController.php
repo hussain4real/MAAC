@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\RunStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\SubmitToolResultRequest;
+use App\Jobs\AdvanceAgentRun;
 use App\Support\Runtime\AgentRunner;
 use App\Support\Runtime\RunAuthorizer;
 use App\Support\Runtime\RunPayload;
@@ -13,7 +15,8 @@ use Illuminate\Http\JsonResponse;
 /**
  * Receives client-side tool results for a paused run. The runtime validates the
  * tool-call identity, payload size, run status, and output schema before
- * resuming the run.
+ * resuming the run. A synchronous run is driven to its next boundary inline; an
+ * asynchronous run is accepted (`202`) and continued by a worker.
  */
 class ToolResultController extends Controller
 {
@@ -24,6 +27,16 @@ class ToolResultController extends Controller
     {
         $context = SdkContext::fromRequest($request);
         $run = $authorizer->resolveRun($context->application, $runId);
+
+        if ($run->isAsync()) {
+            $accepted = $runner->acceptToolResult($run, $request->toolCallId(), $request->result());
+
+            if ($accepted->status === RunStatus::Running) {
+                AdvanceAgentRun::dispatch($accepted);
+            }
+
+            return new JsonResponse(RunPayload::for($accepted), 202);
+        }
 
         $resumed = $runner->resume($run, $request->toolCallId(), $request->result());
 

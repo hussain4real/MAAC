@@ -308,20 +308,22 @@ Turn the Phase 3 SDK surfaces into a versioned integration product that can be s
 
 ### Phase 6D: Async, Streaming, Polling & Webhook Runtime Modes
 
+> **Status: ✅ Complete** — branch `feature/maac-phase-6d-async-runtime`. The runtime now supports long-running and interactive runs alongside the synchronous path. A new `agent_runs.mode` (`sync`/`async`) records how a run was invoked: `AgentRunner` was refactored into `createRun`/`process`/`acceptToolResult`/`drive` (the synchronous `start()`/`resume()` are preserved), and `POST /api/v1/agents/{slug}/runs` accepts `mode: async` → creates the run, returns **`202 queued`**, and a worker (`ProcessAgentRun`) drives it; a client-side tool result on an async run is accepted (`202`) and continued by `AdvanceAgentRun`. **Polling** is the existing `GET /api/v1/runs/{id}` plus SDK `pollRun()`/`runAsync()`. **Streaming** is a new SSE endpoint `GET /api/v1/runs/{id}/stream` (`RunStreamController` via `response()->eventStream()`) that replays the run's trace events to a boundary — so a streamed run produces the same trace/audit/cost data as a sync run. **Webhooks**: applications self-register endpoints (`POST/GET/DELETE /api/v1/webhook-endpoints`, one-time signing secret) or manage them on a new console **Webhooks** page; `RunWebhookEmitter` (wired into every run transition) fans `run.running`/`run.tool_requested`/`run.completed`/`run.failed`/`run.expired`/`run.cancelled` events to subscribed endpoints, and `DeliverWebhook` posts an **HMAC-SHA256-signed** payload with its own retry/backoff, persisting every attempt (the `webhook_deliveries` audit trail) — failures are observable and **replayable** from the console. Both SDKs gained `startRun(mode)`, `pollRun`, `runAsync`, `registerWebhook`/`listWebhooks`/`deleteWebhook`, `streamRun`, and a `WebhookSignature`/`verifyWebhook` helper (pinned by a new `webhook_signature` shared contract fixture), and were bumped to **0.1.0** (the API contract stays v0.0.1, additively advertising a `capabilities` block). Reference consumers gained async/polling + a signature-verifying webhook receiver, exercised end-to-end through the in-process `KernelTransport` (now buffers streamed responses). Verified: **509 Pest tests at 100 % line coverage**; PHPStan L7, Pint, ESLint, Prettier, `tsc` (frontend + SDK), 30 Node tests, `maac:sdk-fixtures --check`, and `npm run build` all clean — plus a live Chrome walkthrough of the Webhooks console page and SDK docs.
+
 #### Goal
 
 Support long-running and interactive agent experiences without weakening auditability, timeout controls, authorization, or SDK ergonomics.
 
 #### Checklist
 
-- [ ] Add asynchronous runtime mode for long-running agent runs.
-- [ ] Add polling SDK integration mode for applications that cannot hold open a request.
-- [ ] Add webhook delivery for run status changes, tool requests, completion, failure, and expiry.
-- [ ] Add streaming runtime events for chat-style or progress-oriented interfaces.
-- [ ] Persist delivery attempts, replay state, webhook signatures, and failure reasons.
-- [ ] Add SDK support for polling, webhooks, and streaming with resumable error handling.
-- [ ] Add E2E tests from external reference apps for async, polling, webhook, and streaming paths.
-- [ ] Update the SDK docs (`resources/js/pages/maac/sdk-docs.tsx` + `docs/MAAC_SDK_Integration_Guide.md`): move async / webhook / streaming from "Coming soon" to Supported in the compatibility matrix and document its usage + examples.
+- [x] Add asynchronous runtime mode for long-running agent runs.
+- [x] Add polling SDK integration mode for applications that cannot hold open a request.
+- [x] Add webhook delivery for run status changes, tool requests, completion, failure, and expiry.
+- [x] Add streaming runtime events for chat-style or progress-oriented interfaces.
+- [x] Persist delivery attempts, replay state, webhook signatures, and failure reasons.
+- [x] Add SDK support for polling, webhooks, and streaming with resumable error handling.
+- [x] Add E2E tests from external reference apps for async, polling, webhook, and streaming paths.
+- [x] Update the SDK docs (`resources/js/pages/maac/sdk-docs.tsx` + `docs/MAAC_SDK_Integration_Guide.md`): move async / webhook / streaming from "Coming soon" to Supported in the compatibility matrix and document its usage + examples.
 
 #### Deliverables
 

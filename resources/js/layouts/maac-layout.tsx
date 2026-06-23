@@ -9,6 +9,7 @@ import type { ReactNode } from 'react';
 import { CredentialSecretGate } from '@/components/maac/credential-secret-gate';
 import { Sidebar } from '@/components/maac/sidebar';
 import { Topbar } from '@/components/maac/topbar';
+import { WebhookSecretGate } from '@/components/maac/webhook-secret-gate';
 import { MaacNavProvider } from '@/maac/nav';
 
 export default function MaacLayout({ children }: { children: ReactNode }) {
@@ -49,6 +50,7 @@ export default function MaacLayout({ children }: { children: ReactNode }) {
                     </main>
                 </div>
                 <CredentialSecretGate />
+                <WebhookSecretGate />
             </div>
         </MaacNavProvider>
     );

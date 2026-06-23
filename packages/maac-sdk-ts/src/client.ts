@@ -2,7 +2,7 @@ import { MaacApiError, MissingToolHandlerError, RunNotResolvedError, TransportEr
 import { ToolHandlerRegistry } from './registry.ts';
 import { fetchTransport } from './transport.ts';
 import type { HttpRequest, HttpResponse, Transport } from './transport.ts';
-import { findTool, isWaiting } from './types.ts';
+import { findTool, isSettled, isWaiting } from './types.ts';
 import type {
   ImplementationReport,
   ImplementationResult,
@@ -10,10 +10,23 @@ import type {
   ManifestAgent,
   ManifestTool,
   Run,
+  RunEvent,
+  RunMode,
   SdkCompatibility,
   ToolCall,
+  WebhookEndpoint,
 } from './types.ts';
 import { SDK_LANGUAGE, SDK_VERSION } from './version.ts';
+
+/** Options for driving an asynchronous run via polling. */
+export interface AsyncRunOptions {
+  maxIterations?: number;
+  maxAttempts?: number;
+  intervalMs?: number;
+}
+
+const sleep = (ms: number): Promise<void> =>
+  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 /** Connection configuration for a MAAC application credential. */
 export interface MaacConfig {
@@ -125,9 +138,13 @@ export class MaacClient {
     return reports.length === 0 ? [] : this.reportImplementations(reports);
   }
 
-  /** Start a run for a published agent. */
-  async startRun(agentSlug: string, input: string, caller?: string): Promise<Run> {
-    const payload: Record<string, unknown> = { input };
+  /**
+   * Start a run for a published agent. Pass `'async'` to queue a long-running
+   * run for a worker (driven via polling, streaming, or webhooks) instead of
+   * blocking the request.
+   */
+  async startRun(agentSlug: string, input: string, caller?: string, mode: RunMode = 'sync'): Promise<Run> {
+    const payload: Record<string, unknown> = { input, mode };
 
     if (caller !== undefined) {
       payload.caller = caller;
@@ -201,6 +218,150 @@ export class MaacClient {
     }
 
     return run;
+  }
+
+  /**
+   * Poll a run's status until it reaches a decision point — terminal, or paused
+   * for a client-side tool — backing off between reads. This is the polling
+   * integration mode for applications that cannot hold a request open.
+   */
+  async pollRun(runId: string, maxAttempts = 60, intervalMs = 1000): Promise<Run> {
+    let run = await this.getRun(runId);
+
+    for (let attempt = 0; !isSettled(run); attempt++) {
+      if (attempt >= maxAttempts) {
+        throw new RunNotResolvedError(run, `The run [${run.runId}] did not settle within ${maxAttempts} polls.`);
+      }
+
+      await sleep(intervalMs);
+      run = await this.getRun(runId);
+    }
+
+    return run;
+  }
+
+  /**
+   * Start an asynchronous run and drive it to completion by polling, servicing
+   * each client-side tool pause from the registry. Unlike `run()`, the request
+   * never blocks while the model works.
+   */
+  async runAsync(
+    agentSlug: string,
+    input: string,
+    registry: ToolHandlerRegistry,
+    caller?: string,
+    options: AsyncRunOptions = {},
+  ): Promise<Run> {
+    const maxIterations = options.maxIterations ?? 16;
+    const maxAttempts = options.maxAttempts ?? 60;
+    const intervalMs = options.intervalMs ?? 1000;
+
+    const started = await this.startRun(agentSlug, input, caller, 'async');
+    let run = await this.pollRun(started.runId, maxAttempts, intervalMs);
+
+    for (let iteration = 0; isWaiting(run); iteration++) {
+      if (iteration >= maxIterations) {
+        throw new RunNotResolvedError(run, `The run [${run.runId}] did not finish within ${maxIterations} tool iterations.`);
+      }
+
+      const toolCall = run.toolCall;
+
+      if (toolCall === null) {
+        throw new RunNotResolvedError(run, `The run [${run.runId}] is waiting but MAAC returned no pending tool call.`);
+      }
+
+      const handler = registry.resolve(toolCall.tool);
+
+      if (handler === null) {
+        throw new MissingToolHandlerError(toolCall.tool);
+      }
+
+      const result = await handler(toolCall.arguments, { run, toolCall });
+      await this.submitToolResult(run.runId, toolCall.id, result);
+      run = await this.pollRun(run.runId, maxAttempts, intervalMs);
+    }
+
+    return run;
+  }
+
+  /**
+   * Register a webhook endpoint MAAC will post run lifecycle events to. The
+   * returned endpoint carries its one-time signing secret — store it now to
+   * verify deliveries with `verifyWebhook`.
+   */
+  async registerWebhook(url: string, events: string[] = ['*'], description?: string): Promise<WebhookEndpoint> {
+    const payload: Record<string, unknown> = { url, events };
+
+    if (description !== undefined) {
+      payload.description = description;
+    }
+
+    const response = await this.request({
+      method: 'POST',
+      url: this.url('/api/v1/webhook-endpoints'),
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    return parseWebhookEndpoint(this.decode(response));
+  }
+
+  /** List the application's registered webhook endpoints for its environment. */
+  async listWebhooks(): Promise<WebhookEndpoint[]> {
+    const response = await this.request({
+      method: 'GET',
+      url: this.url('/api/v1/webhook-endpoints'),
+      headers: { Accept: 'application/json' },
+    });
+
+    const rows = this.decode(response).data;
+
+    return Array.isArray(rows)
+      ? rows
+          .filter((row): row is Record<string, unknown> => row !== null && typeof row === 'object')
+          .map(parseWebhookEndpoint)
+      : [];
+  }
+
+  /** Delete a registered webhook endpoint. */
+  async deleteWebhook(id: string): Promise<void> {
+    const response = await this.request({
+      method: 'DELETE',
+      url: this.url(`/api/v1/webhook-endpoints/${encodeURIComponent(id)}`),
+      headers: { Accept: 'application/json' },
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw MaacApiError.fromResponse(response);
+    }
+  }
+
+  /**
+   * Stream a run's lifecycle as Server-Sent Events. The optional callback is
+   * invoked for each event; all events are also returned. The stream closes when
+   * the run reaches a boundary, so the final `run.state` event carries the same
+   * shape `getRun()` does.
+   */
+  async streamRun(runId: string, onEvent?: (event: RunEvent) => void): Promise<RunEvent[]> {
+    const response = await this.request({
+      method: 'GET',
+      url: this.url(`/api/v1/runs/${encodeURIComponent(runId)}/stream`),
+      headers: { Accept: 'text/event-stream' },
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw MaacApiError.fromResponse(response);
+    }
+
+    const events = parseEvents(response.body);
+
+    if (onEvent !== undefined) {
+      for (const event of events) {
+        onEvent(event);
+      }
+    }
+
+    return events;
   }
 
   private url(path: string): string {
@@ -408,4 +569,55 @@ function parseManifest(data: Record<string, unknown>): Manifest {
     agents: agents.filter((agent): agent is Record<string, unknown> => agent !== null && typeof agent === 'object').map(parseAgent),
     tools: tools.filter((tool): tool is Record<string, unknown> => tool !== null && typeof tool === 'object').map(parseTool),
   };
+}
+
+function parseWebhookEndpoint(data: Record<string, unknown>): WebhookEndpoint {
+  const events = Array.isArray(data.events) ? data.events.map((event) => String(event)) : [];
+
+  return {
+    id: asString(data.id),
+    url: asString(data.url),
+    events,
+    environment: asString(data.environment),
+    status: asString(data.status),
+    secret: typeof data.secret === 'string' ? data.secret : null,
+  };
+}
+
+function parseEvents(body: string): RunEvent[] {
+  const events: RunEvent[] = [];
+
+  for (const block of body.trim().split(/\r?\n\r?\n/)) {
+    let name = 'message';
+    const dataLines: string[] = [];
+
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('event:')) {
+        name = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).replace(/^ /, ''));
+      }
+    }
+
+    const data = dataLines.join('\n');
+
+    if (data === '' || data === '</stream>') {
+      continue;
+    }
+
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      parsed = { raw: data };
+    }
+
+    events.push({
+      event: name,
+      data: parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : { raw: data },
+    });
+  }
+
+  return events;
 }

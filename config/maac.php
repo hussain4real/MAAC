@@ -17,6 +17,13 @@ return [
     | budget after which a run that has not finished is expired.
     | `per_turn_timeout_seconds` bounds an individual LLM provider call.
     |
+    | `stream` configures the Server-Sent Events runtime feed (the poll interval
+    | between trace-event flushes and the wall-clock cap on a single stream).
+    | `webhooks` configures outbound run-event delivery: the per-attempt HTTP
+    | timeout, the maximum number of attempts, the exponential backoff schedule
+    | (seconds per retry), and how much clock skew a receiver may tolerate when
+    | verifying a signature.
+    |
     */
 
     'runtime' => [
@@ -24,6 +31,18 @@ return [
         'max_steps' => (int) env('MAAC_RUNTIME_MAX_STEPS', 8),
         'default_timeout_seconds' => (int) env('MAAC_RUNTIME_TIMEOUT', 120),
         'per_turn_timeout_seconds' => (int) env('MAAC_RUNTIME_TURN_TIMEOUT', 30),
+
+        'stream' => [
+            'poll_interval_ms' => (int) env('MAAC_RUNTIME_STREAM_INTERVAL', 500),
+            'max_seconds' => (int) env('MAAC_RUNTIME_STREAM_MAX_SECONDS', 60),
+        ],
+
+        'webhooks' => [
+            'timeout_seconds' => (int) env('MAAC_WEBHOOK_TIMEOUT', 10),
+            'max_attempts' => (int) env('MAAC_WEBHOOK_MAX_ATTEMPTS', 5),
+            'backoff' => [10, 30, 60, 120],
+            'signature_tolerance_seconds' => (int) env('MAAC_WEBHOOK_SIGNATURE_TOLERANCE', 300),
+        ],
     ],
 
     /*
@@ -58,18 +77,18 @@ return [
 
         'minimum_client_version' => env('MAAC_SDK_MIN_CLIENT_VERSION', '0.0.1'),
 
-        'current_client_version' => env('MAAC_SDK_CURRENT_CLIENT_VERSION', '0.0.1'),
+        'current_client_version' => env('MAAC_SDK_CURRENT_CLIENT_VERSION', '0.1.0'),
 
         'packages' => [
             'php' => [
                 'name' => 'milaha/maac-sdk',
-                'version' => '0.0.1',
+                'version' => '0.1.0',
                 'registry' => 'packagist',
                 'status' => 'supported',
             ],
             'typescript' => [
                 'name' => '@maac/sdk',
-                'version' => '0.0.1',
+                'version' => '0.1.0',
                 'registry' => 'npm',
                 'status' => 'supported',
             ],

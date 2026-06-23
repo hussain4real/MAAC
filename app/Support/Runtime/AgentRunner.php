@@ -5,10 +5,12 @@ namespace App\Support\Runtime;
 use App\Enums\AgentStatus;
 use App\Enums\Environment;
 use App\Enums\ExecMode;
+use App\Enums\RunMode;
 use App\Enums\RunStatus;
 use App\Enums\Sensitivity;
 use App\Enums\ToolCallStatus;
 use App\Enums\TraceEventType;
+use App\Enums\WebhookEventType;
 use App\Exceptions\Sdk\RuntimeRequestException;
 use App\Models\Agent;
 use App\Models\AgentRun;
@@ -20,6 +22,7 @@ use App\Support\Governance\RunRedactor;
 use App\Support\Runtime\Contracts\LlmRouter;
 use App\Support\Runtime\HostedTools\HostedToolRegistry;
 use App\Support\Sdk\ToolSchema;
+use App\Support\Webhooks\RunWebhookEmitter;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
 use Throwable;
@@ -38,12 +41,25 @@ class AgentRunner
         private readonly HostedToolRegistry $hostedTools,
         private readonly RunTracer $tracer,
         private readonly RunRedactor $redactor,
+        private readonly RunWebhookEmitter $webhooks,
     ) {}
 
     /**
-     * Create and drive a new run for the given agent and caller context.
+     * Create and synchronously drive a new run for the given agent and caller
+     * context, blocking until it completes, pauses, or fails.
      */
     public function start(Agent $agent, Application $application, Environment $environment, string $input, ?string $caller): AgentRun
+    {
+        return $this->process($this->createRun($agent, $application, $environment, $input, $caller, RunMode::Sync));
+    }
+
+    /**
+     * Persist a queued run for the given agent and caller context, recording the
+     * request and applying the masking policy, without driving it yet. The
+     * synchronous path drives it immediately via {@see self::process()}; the
+     * asynchronous path hands the queued run to a worker.
+     */
+    public function createRun(Agent $agent, Application $application, Environment $environment, string $input, ?string $caller, RunMode $mode): AgentRun
     {
         $provider = $agent->llmProvider;
 
@@ -54,6 +70,7 @@ class AgentRunner
             'llm_provider_id' => $provider->id,
             'slug' => 'run_'.Str::lower(Str::random(10)),
             'caller' => $caller,
+            'mode' => $mode,
             'environment' => $environment,
             'sensitivity' => $this->resolveSensitivity($agent),
             'status' => RunStatus::Queued,
@@ -76,20 +93,43 @@ class AgentRunner
             'masked' => $this->redactor->applies($run),
         ]);
 
-        $this->tracer->record($run, TraceEventType::RunRequested, 'Run requested.', ['caller' => $caller]);
+        $this->tracer->record($run, TraceEventType::RunRequested, 'Run requested.', ['caller' => $caller, 'mode' => $mode->value]);
         $this->tracer->record($run, TraceEventType::CallerAuthenticated, 'Caller authenticated.', [
             'application' => $application->slug,
             'environment' => $environment->value,
         ]);
 
-        if (! $provider->isAvailableIn($environment->value)) {
+        return $run;
+    }
+
+    /**
+     * Select the model, mark the run running, and drive it to its first
+     * boundary. Safe to call from a queued worker (it reloads relations).
+     */
+    public function process(AgentRun $run): AgentRun
+    {
+        $run->loadMissing(['agent.tools', 'agent.llmProvider']);
+        $provider = $run->agent->llmProvider;
+
+        if ($run->environment === null || ! $provider->isAvailableIn($run->environment->value)) {
             return $this->fail($run, 'model_unavailable', 'The agent model is not approved or available in this environment.');
         }
 
         $this->tracer->record($run, TraceEventType::ModelSelected, 'Model selected.', ['model' => $provider->code]);
         $this->tracer->record($run, TraceEventType::PromptPrepared, 'Prompt prepared.');
 
-        $run->update(['status' => RunStatus::Running]);
+        $this->markRunning($run);
+
+        return $this->advance($run);
+    }
+
+    /**
+     * Drive a previously-prepared run's model/tool loop to its next boundary.
+     * Used to resume a paused run and to continue an async run on a worker.
+     */
+    public function drive(AgentRun $run): AgentRun
+    {
+        $run->loadMissing(['agent.tools', 'agent.llmProvider']);
 
         return $this->advance($run);
     }
@@ -109,13 +149,34 @@ class AgentRunner
     }
 
     /**
-     * Resume a paused run with a client-side tool result.
+     * Resume a paused run with a client-side tool result and drive it
+     * synchronously to its next boundary.
      *
      * @param  array<string, mixed>  $result
      *
      * @throws RuntimeRequestException
      */
     public function resume(AgentRun $run, string $toolCallId, array $result): AgentRun
+    {
+        $accepted = $this->acceptToolResult($run, $toolCallId, $result);
+
+        if ($accepted->status !== RunStatus::Running) {
+            return $accepted;
+        }
+
+        return $this->advance($accepted);
+    }
+
+    /**
+     * Validate and accept a client-side tool result for a paused run, marking it
+     * running again — without driving it. The synchronous path drives it inline;
+     * the asynchronous path hands the running run back to a worker.
+     *
+     * @param  array<string, mixed>  $result
+     *
+     * @throws RuntimeRequestException
+     */
+    public function acceptToolResult(AgentRun $run, string $toolCallId, array $result): AgentRun
     {
         $run->loadMissing(['agent.tools', 'agent.llmProvider']);
 
@@ -142,9 +203,18 @@ class AgentRunner
         $this->appendMessage($run, LlmMessage::tool($call->tool_name, (string) json_encode($result)));
         $this->tracer->record($run, TraceEventType::Resumed, 'Run resumed after client tool.');
 
-        $run->update(['status' => RunStatus::Running]);
+        $this->markRunning($run);
 
-        return $this->advance($run);
+        return $run;
+    }
+
+    /**
+     * Mark the run running and emit the corresponding webhook event.
+     */
+    private function markRunning(AgentRun $run): void
+    {
+        $run->update(['status' => RunStatus::Running]);
+        $this->webhooks->emit($run, WebhookEventType::RunRunning);
     }
 
     /**
@@ -310,6 +380,7 @@ class AgentRunner
     {
         $this->tracer->record($run, TraceEventType::ToolRequired, 'Run paused for client-side tool.', ['tool_call_id' => $call->id]);
         $run->update(['status' => RunStatus::WaitingForClient]);
+        $this->webhooks->emit($run, WebhookEventType::RunToolRequested);
 
         return $run;
     }
@@ -424,6 +495,7 @@ class AgentRunner
             'latency_ms' => $this->latency($run),
         ]);
         $this->tracer->record($run, TraceEventType::Completed, 'Run completed.');
+        $this->webhooks->emit($run, WebhookEventType::RunCompleted);
 
         return $run;
     }
@@ -443,6 +515,7 @@ class AgentRunner
             'latency_ms' => $this->latency($run),
         ]);
         $this->tracer->record($run, TraceEventType::Failed, $message, [...$data, 'code' => $code]);
+        $this->webhooks->emit($run, WebhookEventType::RunFailed);
 
         return $run;
     }
@@ -460,6 +533,7 @@ class AgentRunner
             'latency_ms' => $this->latency($run),
         ]);
         $this->tracer->record($run, TraceEventType::Failed, 'Run expired.', ['code' => 'run_expired']);
+        $this->webhooks->emit($run, WebhookEventType::RunExpired);
 
         return $run;
     }
@@ -477,6 +551,7 @@ class AgentRunner
             'latency_ms' => $this->latency($run),
         ]);
         $this->tracer->record($run, TraceEventType::Failed, 'Run cancelled.', ['code' => 'agent_unpublished']);
+        $this->webhooks->emit($run, WebhookEventType::RunCancelled);
 
         return $run;
     }

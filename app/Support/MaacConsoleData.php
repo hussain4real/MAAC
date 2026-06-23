@@ -8,10 +8,12 @@ use App\Http\Resources\Maac\ApplicationResource;
 use App\Http\Resources\Maac\LlmProviderResource;
 use App\Http\Resources\Maac\ProjectResource;
 use App\Http\Resources\Maac\ToolContractResource;
+use App\Http\Resources\Maac\WebhookEndpointResource;
 use App\Models\Agent;
 use App\Models\AgentRun;
 use App\Models\Project;
 use App\Models\Team;
+use App\Models\WebhookEndpoint;
 use App\Support\Observability\OperationalMonitor;
 use App\Support\Observability\RunMetrics;
 use App\Support\Sdk\SdkCompatibilityReport;
@@ -63,6 +65,12 @@ class MaacConsoleData
             ->orderByDesc('usage_pct')
             ->get();
 
+        $webhooks = WebhookEndpoint::query()
+            ->whereHas('application', fn ($query) => $query->where('team_id', $team->id))
+            ->with(['application', 'deliveries' => fn ($query) => $query->with('agentRun')->latest()->limit(15)])
+            ->orderByDesc('created_at')
+            ->get();
+
         $operational = app(OperationalMonitor::class)->forTeam($team);
 
         return [
@@ -80,6 +88,8 @@ class MaacConsoleData
             'operational' => $operational['metrics'],
             // Phase 6C — SDK versioning/compatibility dashboard dataset.
             'sdkCompatibility' => app(SdkCompatibilityReport::class)->forTeam($team),
+            // Phase 6D — webhook endpoints + recent delivery history.
+            'webhooks' => WebhookEndpointResource::collection($webhooks)->resolve(),
             ...GovernanceConsoleData::forTeam($team),
         ];
     }

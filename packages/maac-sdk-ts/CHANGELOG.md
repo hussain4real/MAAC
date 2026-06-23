@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and
 The SDK's MAJOR version tracks the MAAC **API contract version** it targets: a
 breaking change to a MAAC SDK/runtime response shape bumps the MAJOR of both.
 
+## [0.1.0] — 2026-06-22
+
+Adds the long-running and interactive runtime modes. Still targets MAAC API
+contract **v0.0.1** and is fully backward compatible — existing synchronous calls
+are unchanged.
+
+### Added
+
+- `startRun(..., 'async')` to queue a long-running run for a worker.
+- `pollRun()` and `runAsync()` — the polling integration mode; `runAsync()` also
+  services client-side tool pauses from the registry.
+- `registerWebhook()` / `listWebhooks()` / `deleteWebhook()` for run-event webhook
+  delivery, plus `signWebhook()` / `verifyWebhook()` to verify the HMAC-SHA256
+  signature on the receiving side (pinned by the shared contract fixtures).
+- `streamRun()` — consume a run's Server-Sent Events lifecycle.
+- New `WebhookEndpoint`, `RunEvent`, and `RunMode` types; `isSettled()` helper.
+
 ## [0.0.1] — 2026-06-22
 
 Initial release. Targets MAAC API contract **v0.0.1**.

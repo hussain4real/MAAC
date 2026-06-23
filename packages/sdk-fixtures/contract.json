@@ -282,6 +282,29 @@
             "upgrade_required": false
         }
     ],
+    "webhook_signature": [
+        {
+            "name": "completed run event",
+            "payload": "{\"event\":\"run.completed\",\"data\":{\"status\":\"completed\"}}",
+            "timestamp": "1700000000",
+            "secret": "whsec_example_secret",
+            "signature": "7ece7df4108a3408e08047d07e16178d1bcc2d0d60f6c75ce417676ec2975f80"
+        },
+        {
+            "name": "empty payload",
+            "payload": "",
+            "timestamp": "1700000001",
+            "secret": "whsec_example_secret",
+            "signature": "a67056973dcacfbf8d083ed636c8bab32ce00a04485acfbed0b12ab11b70a619"
+        },
+        {
+            "name": "tool-requested event with a different secret",
+            "payload": "{\"event\":\"run.tool_requested\",\"data\":{\"tool\":\"getRecords\"}}",
+            "timestamp": "1700000123",
+            "secret": "whsec_rotated_secret",
+            "signature": "812fbfa8e98e1710b0bbf519dbcf24c870fc795e8518d205fad4854ec0d13279"
+        }
+    ],
     "errors": [
         {
             "code": "invalid_token",
