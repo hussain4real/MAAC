@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { MaacApiError } from '../src/errors.ts';
 import type { HttpResponse } from '../src/transport.ts';
 import { evaluateCompatibility, validateSchema } from '../src/testing.ts';
+import { signWebhook } from '../src/webhooks.ts';
 
 /**
  * Proves the TypeScript SDK decides schema validity, implementation
@@ -15,6 +16,7 @@ import { evaluateCompatibility, validateSchema } from '../src/testing.ts';
 interface ContractFixtures {
   schema_validation: Array<{ name: string; schema: Record<string, unknown>; payload: Record<string, unknown>; valid: boolean; errors: string[] }>;
   compatibility: Array<{ name: string; reported_version: string; current_version: string; reported_fingerprint: string | null; current_fingerprint: string | null; status: string }>;
+  webhook_signature: Array<{ name: string; payload: string; timestamp: string; secret: string; signature: string }>;
   errors: Array<{ code: string; status: number }>;
 }
 
@@ -41,6 +43,12 @@ test('decides implementation compatibility exactly like MAAC', () => {
     );
 
     assert.equal(status, fixture.status, fixture.name);
+  }
+});
+
+test('signs webhooks exactly like MAAC', () => {
+  for (const fixture of fixtures.webhook_signature) {
+    assert.equal(signWebhook(fixture.payload, fixture.timestamp, fixture.secret), fixture.signature, fixture.name);
   }
 });
 

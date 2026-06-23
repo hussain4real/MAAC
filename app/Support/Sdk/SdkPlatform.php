@@ -2,7 +2,9 @@
 
 namespace App\Support\Sdk;
 
+use App\Enums\RunMode;
 use App\Enums\SdkLanguage;
+use App\Enums\WebhookEventType;
 
 /**
  * The versioned identity of MAAC's SDK/runtime integration surface (Phase 6C).
@@ -92,9 +94,29 @@ class SdkPlatform
     }
 
     /**
+     * The runtime/integration capabilities this MAAC instance supports, so an
+     * SDK can detect — from a single descriptor fetch — whether asynchronous
+     * runs, polling, streaming, and webhook delivery are available without
+     * probing each surface. Derived from the enums so the advertised set never
+     * drifts from what the runtime actually accepts.
+     *
+     * @return array<string, mixed>
+     */
+    public function capabilities(): array
+    {
+        return [
+            'runtime_modes' => RunMode::values(),
+            'integration_modes' => ['blocking', 'polling', 'streaming', 'webhook'],
+            'streaming' => true,
+            'webhooks' => true,
+            'webhook_events' => WebhookEventType::values(),
+        ];
+    }
+
+    /**
      * The canonical `sdk` descriptor embedded in API responses: the API
-     * version, the supported client window, languages, packages, and
-     * deprecations.
+     * version, the supported client window, languages, packages, capabilities,
+     * and deprecations.
      *
      * @return array<string, mixed>
      */
@@ -106,6 +128,7 @@ class SdkPlatform
             'current_client_version' => $this->currentClientVersion(),
             'languages' => SdkLanguage::options(),
             'packages' => $this->packages(),
+            'capabilities' => $this->capabilities(),
             'deprecations' => $this->deprecations(),
         ];
     }

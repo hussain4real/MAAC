@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support\Sdk;
 
 use Illuminate\Foundation\Testing\TestCase;
+use Illuminate\Testing\TestResponse;
 use Maac\Sdk\Contracts\Transport;
 use Maac\Sdk\Http\HttpRequest;
 use Maac\Sdk\Http\HttpResponse;
@@ -45,7 +46,19 @@ final class KernelTransport implements Transport
             $content,
         );
 
-        return new HttpResponse($response->getStatusCode(), (string) $response->getContent());
+        return new HttpResponse($response->getStatusCode(), $this->body($response));
+    }
+
+    /**
+     * Read a response body. A streamed (Server-Sent Events) response's
+     * `getContent()` returns `false` because its body is only emitted when sent,
+     * so it is captured via the test response's streamed-content buffer.
+     */
+    private function body(TestResponse $response): string
+    {
+        $content = $response->baseResponse->getContent();
+
+        return $content === false ? (string) $response->streamedContent() : $content;
     }
 
     /**

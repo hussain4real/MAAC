@@ -4,6 +4,7 @@ use Maac\Sdk\Exceptions\MaacApiException;
 use Maac\Sdk\Http\HttpResponse;
 use Maac\Sdk\Testing\Compatibility;
 use Maac\Sdk\Testing\SchemaValidator;
+use Maac\Sdk\Webhooks\WebhookSignature;
 
 /**
  * Proves the PHP SDK decides schema validity, implementation compatibility, and
@@ -59,6 +60,10 @@ it('decides implementation compatibility exactly like MAAC', function (array $ca
 
     expect($status)->toBe($case['status']);
 })->with(fn () => fixtureCases('compatibility'));
+
+it('signs webhooks exactly like MAAC', function (array $case) {
+    expect(WebhookSignature::sign($case['payload'], $case['timestamp'], $case['secret']))->toBe($case['signature']);
+})->with(fn () => fixtureCases('webhook_signature'));
 
 it('parses every controlled error envelope', function (array $case) {
     $response = new HttpResponse(

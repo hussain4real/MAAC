@@ -51,6 +51,18 @@ final class CliConsumer
     }
 
     /**
+     * Invoke the agent as a long-running asynchronous run and drive it to
+     * completion by polling — the integration mode for a process that cannot
+     * hold an HTTP request open while the model works.
+     *
+     * @param  array{maxIterations?: int, maxAttempts?: int, intervalMs?: int}  $options
+     */
+    public function runAsync(string $prompt, ?string $caller = 'php-cli-reference', array $options = []): Run
+    {
+        return $this->client->runAsync($this->agentSlug, $prompt, $this->registry, $caller, $options);
+    }
+
+    /**
      * Build the consumer from the documented MAAC_* environment variables.
      */
     public static function fromEnvironment(?Transport $transport = null): self

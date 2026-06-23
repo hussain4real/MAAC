@@ -1,5 +1,5 @@
 import { MaacClient, MaacError, ToolHandlerRegistry } from '../../../packages/maac-sdk-ts/src/index.ts';
-import type { ImplementationResult, MaacConfig, Run, Transport } from '../../../packages/maac-sdk-ts/src/index.ts';
+import type { AsyncRunOptions, ImplementationResult, MaacConfig, Run, Transport } from '../../../packages/maac-sdk-ts/src/index.ts';
 import { fetchRecordsHandler } from './fetchRecordsHandler.ts';
 
 export interface NodeConsumerOptions {
@@ -38,6 +38,15 @@ export class NodeConsumer {
   /** Invoke the agent and drive it to a terminal state via local handlers. */
   async run(prompt: string, caller = 'node-reference'): Promise<Run> {
     return this.client.run(this.agentSlug, prompt, this.registry, caller);
+  }
+
+  /**
+   * Invoke the agent as a long-running asynchronous run and drive it to
+   * completion by polling — the integration mode for a process that cannot hold
+   * an HTTP request open while the model works.
+   */
+  async runAsync(prompt: string, caller = 'node-reference', options: AsyncRunOptions = {}): Promise<Run> {
+    return this.client.runAsync(this.agentSlug, prompt, this.registry, caller, options);
   }
 
   /** Build the consumer from the documented MAAC_* environment variables. */

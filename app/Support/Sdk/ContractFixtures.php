@@ -2,6 +2,8 @@
 
 namespace App\Support\Sdk;
 
+use App\Support\Webhooks\WebhookSigner;
+
 /**
  * Builds the canonical SDK contract fixture suite from MAAC's own logic (Phase
  * 6C). Each case's expected output is computed by the real server classes
@@ -48,6 +50,7 @@ class ContractFixtures
             'fingerprint' => self::fingerprintCases(),
             'compatibility' => self::compatibilityCases(),
             'version_negotiation' => self::versionNegotiationCases(),
+            'webhook_signature' => self::webhookSignatureCases(),
             'errors' => array_map(
                 static fn (array $entry): array => ['code' => $entry['code'], 'status' => $entry['status']],
                 self::ERROR_MATRIX,
@@ -230,5 +233,26 @@ class ContractFixtures
                 'upgrade_required' => $verdict['upgrade_required'],
             ];
         }, $cases);
+    }
+
+    /**
+     * Webhook-signature cases, with the expected HMAC computed by MAAC's real
+     * {@see WebhookSigner::sign()}. Every SDK's signer (and a receiver verifying
+     * a delivery) must produce the identical signature for the same inputs.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private static function webhookSignatureCases(): array
+    {
+        $cases = [
+            ['name' => 'completed run event', 'payload' => '{"event":"run.completed","data":{"status":"completed"}}', 'timestamp' => '1700000000', 'secret' => 'whsec_example_secret'],
+            ['name' => 'empty payload', 'payload' => '', 'timestamp' => '1700000001', 'secret' => 'whsec_example_secret'],
+            ['name' => 'tool-requested event with a different secret', 'payload' => '{"event":"run.tool_requested","data":{"tool":"getRecords"}}', 'timestamp' => '1700000123', 'secret' => 'whsec_rotated_secret'],
+        ];
+
+        return array_map(
+            static fn (array $case): array => [...$case, 'signature' => WebhookSigner::sign($case['payload'], $case['timestamp'], $case['secret'])],
+            $cases,
+        );
     }
 }

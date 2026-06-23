@@ -19,6 +19,13 @@ export type CredentialSecretFlash = {
     secret: string;
 };
 
+/** One-time webhook signing secret, flashed on register/rotate. */
+export type WebhookSecretFlash = {
+    id: string;
+    url: string;
+    secret: string;
+};
+
 export type AuthLayoutProps = {
     children?: ReactNode;
     name?: string;
