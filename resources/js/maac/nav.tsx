@@ -45,6 +45,10 @@ export type RouteName =
     | 'llm'
     | 'governance'
     | 'webhooks'
+    | 'vault'
+    | 'routing'
+    | 'identity'
+    | 'incidents'
     | 'settings';
 
 type GoParams = { id?: string; agent?: string } & Record<
@@ -94,6 +98,10 @@ const SEGMENT_TO_SCREEN: Record<string, ScreenId> = {
     'llm-providers': 'llm',
     governance: 'governance',
     webhooks: 'webhooks',
+    vault: 'vault',
+    routing: 'routing',
+    identity: 'identity',
+    incidents: 'incidents',
     'platform-settings': 'settings',
 };
 
@@ -147,6 +155,14 @@ function urlFor(name: RouteName, team: string, params: GoParams = {}): string {
             return ConsoleRoutes.governance.url(team);
         case 'webhooks':
             return ConsoleRoutes.webhooks.url(team);
+        case 'vault':
+            return ConsoleRoutes.vault.url(team);
+        case 'routing':
+            return ConsoleRoutes.routing.url(team);
+        case 'identity':
+            return ConsoleRoutes.identity.url(team);
+        case 'incidents':
+            return ConsoleRoutes.incidents.url(team);
         case 'settings':
             return ConsoleRoutes.settings.url(team);
     }

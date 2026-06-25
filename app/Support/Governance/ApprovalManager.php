@@ -6,6 +6,7 @@ use App\Enums\ApprovalStatus;
 use App\Enums\ApprovalType;
 use App\Enums\Environment;
 use App\Models\Agent;
+use App\Models\AgentRun;
 use App\Models\ApprovalRequest;
 use App\Models\Credential;
 use App\Models\KnowledgeSource;
@@ -115,6 +116,21 @@ class ApprovalManager
             'sensitivity' => $source->sensitivity,
             'requested_by' => $requester->id,
             'requested_label' => $requester->name,
+        ]);
+    }
+
+    /**
+     * Open a human-in-the-loop approval for a sensitive run paused by the runtime.
+     */
+    public function requestRuntimeApproval(AgentRun $run, Team $team): ApprovalRequest
+    {
+        return $this->open($team, ApprovalType::RuntimeAction, $run, [
+            'application_id' => $run->application_id,
+            'project_id' => $run->project_id,
+            'title' => "Run {$run->slug}",
+            'summary' => "Approve run {$run->slug} of {$run->agent->name} in {$run->environment?->label()}.",
+            'sensitivity' => $run->sensitivity,
+            'environment' => $run->environment,
         ]);
     }
 

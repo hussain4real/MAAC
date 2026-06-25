@@ -40,7 +40,7 @@ class GovernanceConsoleData
      * Build the governance dataset for the given team.
      *
      * @return array{
-     *     approvals: array{tools: array<int, mixed>, agents: array<int, mixed>, models: array<int, mixed>, data: array<int, mixed>},
+     *     approvals: array{tools: array<int, mixed>, agents: array<int, mixed>, models: array<int, mixed>, data: array<int, mixed>, runtime: array<int, mixed>},
      *     auditEvents: array<int, array<string, mixed>>,
      *     roles: array<int, array<string, mixed>>,
      *     policies: array<int, array{name: string, on: bool, desc: string}>,
@@ -63,9 +63,9 @@ class GovernanceConsoleData
     }
 
     /**
-     * Group pending approval requests into the four console queues.
+     * Group pending approval requests into the console queues.
      *
-     * @return array{tools: array<int, mixed>, agents: array<int, mixed>, models: array<int, mixed>, data: array<int, mixed>}
+     * @return array{tools: array<int, mixed>, agents: array<int, mixed>, models: array<int, mixed>, data: array<int, mixed>, runtime: array<int, mixed>}
      */
     private static function approvals(Team $team): array
     {
@@ -78,6 +78,7 @@ class GovernanceConsoleData
             'agents' => $items->where('queue', 'agents')->values()->all(),
             'models' => $items->where('queue', 'models')->values()->all(),
             'data' => $items->where('queue', 'data')->values()->all(),
+            'runtime' => $items->where('queue', 'runtime')->values()->all(),
         ];
     }
 

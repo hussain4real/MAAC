@@ -22,6 +22,8 @@ class AiLlmRouter implements LlmRouter
      */
     public function complete(LlmRequest $request): LlmCompletion
     {
+        $this->applyVaultKey($request);
+
         $agent = new AnonymousAgent($this->instructions($request), [], []);
 
         $response = $agent->prompt(
@@ -37,6 +39,18 @@ class AiLlmRouter implements LlmRouter
         );
 
         return $this->parse(trim($response->text), $request->tools, $usage);
+    }
+
+    /**
+     * Override the provider API key for this call with the vault-resolved key,
+     * when one is bound. This is what makes a vault rotation take effect on the
+     * very next run without redeploying — the key is never read from disk.
+     */
+    private function applyVaultKey(LlmRequest $request): void
+    {
+        if ($request->apiKey !== null) {
+            config(["ai.providers.{$request->providerDriver}.key" => $request->apiKey]);
+        }
     }
 
     /**

@@ -11,6 +11,7 @@ enum WebhookEventType: string
 {
     case RunRunning = 'run.running';
     case RunToolRequested = 'run.tool_requested';
+    case RunRequiresApproval = 'run.requires_approval';
     case RunCompleted = 'run.completed';
     case RunFailed = 'run.failed';
     case RunExpired = 'run.expired';
@@ -24,6 +25,7 @@ enum WebhookEventType: string
         return match ($this) {
             self::RunRunning => 'Run started',
             self::RunToolRequested => 'Tool requested',
+            self::RunRequiresApproval => 'Run requires approval',
             self::RunCompleted => 'Run completed',
             self::RunFailed => 'Run failed',
             self::RunExpired => 'Run expired',

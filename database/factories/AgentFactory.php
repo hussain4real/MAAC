@@ -41,6 +41,7 @@ class AgentFactory extends Factory
             'version' => 'v1',
             'status' => AgentStatus::Draft,
             'sensitivity' => Sensitivity::Internal,
+            'requires_runtime_approval' => false,
             'system_prompt' => fake()->paragraph(),
             'temperature' => fake()->randomFloat(2, 0, 1),
             'max_tokens' => fake()->randomElement([1200, 1400, 1500, 1800]),

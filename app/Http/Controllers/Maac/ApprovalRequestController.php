@@ -10,7 +10,9 @@ use App\Exceptions\ApprovalBlockedException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Maac\DecideApprovalRequest;
 use App\Http\Requests\Maac\RequestApprovalRequest;
+use App\Jobs\AdvanceAgentRun;
 use App\Models\Agent;
+use App\Models\AgentRun;
 use App\Models\ApprovalRequest;
 use App\Models\Credential;
 use App\Models\KnowledgeSource;
@@ -44,6 +46,7 @@ class ApprovalRequestController extends Controller
             ApprovalType::ModelAccess => $manager->requestModelAccess($this->model($team, $subject), $user, $environment),
             ApprovalType::CredentialChange => $manager->requestCredentialChange($this->credential($team, $subject), $user, (string) ($request->validated('change') ?? 'production change')),
             ApprovalType::KnowledgeIngestion => $manager->requestKnowledgeIngestion($this->source($team, $subject), $user),
+            ApprovalType::RuntimeAction => abort(422, 'Runtime approvals are opened by the runtime, not requested manually.'),
         };
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Approval requested.']);
@@ -60,7 +63,7 @@ class ApprovalRequestController extends Controller
         abort_unless($approvalRequest->isPending(), 409, 'This request has already been decided.');
 
         try {
-            $action->handle($approvalRequest, $request->user(), $request->validated('note'));
+            $approved = $action->handle($approvalRequest, $request->user(), $request->validated('note'));
         } catch (ApprovalBlockedException $exception) {
             Inertia::flash('toast', [
                 'type' => 'error',
@@ -68,6 +71,12 @@ class ApprovalRequestController extends Controller
             ]);
 
             return back();
+        }
+
+        // A resumed runtime approval continues the paused run on a worker (the run
+        // was marked running inside the approval transaction, which has committed).
+        if ($approved->type === ApprovalType::RuntimeAction && $approved->subject instanceof AgentRun) {
+            AdvanceAgentRun::dispatch($approved->subject);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Approval granted.']);

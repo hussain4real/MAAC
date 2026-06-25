@@ -133,6 +133,8 @@ class MaacConsoleData
             'evaluationDatasets' => EvaluationDatasetResource::collection($evaluationDatasets)->resolve(),
             'evaluations' => EvaluationResource::collection($evaluations)->resolve(),
             ...GovernanceConsoleData::forTeam($team),
+            // Phase 6G — enterprise identity, secrets vault & advanced governance.
+            ...EnterpriseConsoleData::forTeam($team),
         ];
     }
 }

@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Support\Secrets\Contracts\SecretVault;
+use App\Support\Secrets\DatabaseSecretVault;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterval;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +21,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Bind the platform secrets vault. The database-backed driver is the
+        // default; an enterprise deployment swaps in an external vault (HashiCorp
+        // Vault, AWS Secrets Manager, …) via `maac.vault.driver` with no caller
+        // change, since every consumer depends on the SecretVault interface.
+        $this->app->bind(SecretVault::class, fn (Application $app): SecretVault => $app->make(
+            (string) config('maac.vault.driver', DatabaseSecretVault::class),
+        ));
     }
 
     /**

@@ -112,6 +112,26 @@ class ConsoleController extends Controller
         return Inertia::render('maac/webhooks');
     }
 
+    public function vault(): Response
+    {
+        return Inertia::render('maac/vault');
+    }
+
+    public function routing(): Response
+    {
+        return Inertia::render('maac/routing');
+    }
+
+    public function identity(): Response
+    {
+        return Inertia::render('maac/identity');
+    }
+
+    public function incidents(): Response
+    {
+        return Inertia::render('maac/incidents');
+    }
+
     public function settings(): Response
     {
         return Inertia::render('maac/settings');

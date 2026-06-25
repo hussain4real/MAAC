@@ -83,6 +83,14 @@ class RuntimeRequestException extends RuntimeException
     }
 
     /**
+     * The application's runtime is frozen by a break-glass incident control.
+     */
+    public static function runtimeFrozen(): self
+    {
+        return new self('runtime_frozen', 'The application runtime is frozen by an incident control. Runs cannot proceed until the freeze is lifted.', 423);
+    }
+
+    /**
      * The submitted tool result failed output-schema validation.
      *
      * @param  array<int, string>  $errors

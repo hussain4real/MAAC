@@ -5,6 +5,7 @@ namespace App\Http\Resources\Maac;
 use App\Enums\ExecMode;
 use App\Enums\RemoteAuthType;
 use App\Models\Agent;
+use App\Models\AgentRun;
 use App\Models\ApprovalRequest;
 use App\Models\Credential;
 use App\Models\KnowledgeSource;
@@ -66,8 +67,33 @@ class ApprovalRequestResource extends JsonResource
             $subject instanceof LlmProvider => $this->modelDetails($subject),
             $subject instanceof Credential => $this->credentialDetails($subject),
             $subject instanceof KnowledgeSource => $this->knowledgeSourceDetails($subject),
+            $subject instanceof AgentRun => $this->runtimeDetails($subject),
             default => null,
         };
+    }
+
+    /**
+     * Detail view for a paused sensitive run awaiting human approval — the agent,
+     * model, sensitivity, environment, and the (masking-aware) input the run will
+     * execute on.
+     *
+     * @return array<string, mixed>
+     */
+    private function runtimeDetails(AgentRun $run): array
+    {
+        $run->loadMissing(['agent', 'llmProvider']);
+
+        return [
+            'kind' => 'Run',
+            'fields' => [
+                ['k' => 'Agent', 'v' => $run->agent->name],
+                ['k' => 'Model', 'v' => $run->llmProvider->name],
+                ['k' => 'Environment', 'v' => $run->environment?->label() ?? '—'],
+                ['k' => 'Sensitivity', 'v' => $run->sensitivity->label()],
+                ['k' => 'Caller', 'v' => $run->caller ?? '—'],
+            ],
+            'description' => $run->input,
+        ];
     }
 
     /**

@@ -90,6 +90,8 @@ export type Application = {
     lastSyncedAt?: string | null;
     /** Safe credential records for the application (no plaintext secrets). */
     credentials?: Credential[];
+    /** Whether a break-glass incident control has frozen this application's runtime. */
+    runtimeFrozen?: boolean;
     region: string;
     created: string;
 };
@@ -1238,7 +1240,9 @@ const approvals: {
     agents: ApprovalItem[];
     models: ApprovalItem[];
     data: ApprovalItem[];
+    runtime: ApprovalItem[];
 } = {
+    runtime: [],
     tools: [
         {
             id: 'getProcurementRequests',

@@ -13,11 +13,15 @@ enum TraceEventType: string
     case RunRequested = 'run_requested';
     case CallerAuthenticated = 'caller_authenticated';
     case ModelSelected = 'model_selected';
+    case ModelFailover = 'model_failover';
     case PromptPrepared = 'prompt_prepared';
     case ToolRequired = 'tool_required';
     case ToolResultReceived = 'tool_result_received';
     case Validated = 'validated';
     case Resumed = 'resumed';
+    case RequiresApproval = 'requires_approval';
+    case ApprovalGranted = 'approval_granted';
+    case ApprovalDenied = 'approval_denied';
     case Completed = 'completed';
     case Failed = 'failed';
 

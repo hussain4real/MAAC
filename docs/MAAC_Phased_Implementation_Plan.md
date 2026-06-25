@@ -403,19 +403,21 @@ Add governed knowledge retrieval and evaluation workflows so teams can test agen
 
 ### Phase 6G: Enterprise Identity, Secrets & Advanced Governance
 
+> **Status: ✅ Complete** — branch `feature/maac-phase-6g-enterprise-identity`. The six enterprise-hardening surfaces are live, each opt-in so the prior 650 tests stay green. **Enterprise SSO/IAM**: a real OAuth 2.0 / OIDC authorization-code flow over the HTTP client (`App\Support\Sso\SsoAuthenticator` → token + userinfo, fully `Http::fake`-able — no new dependency), `App\Support\Sso\SsoUserResolver` recognizes/provisions a user and maps the IdP group claim onto the connection's MAAC team role + project `MaacRole`s (the connection is authoritative for its users), every login writes a `sso.login`/`sso.provisioned` audit event, `sso_connections` + `sso_identities` tables, guest `GET /sso/{connection}/redirect|callback` routes, an admin **Enterprise Identity** console page, and "Continue with …" buttons on the login screen (local password auth preserved). **Secrets vault**: a `SecretVault` contract + default `DatabaseSecretVault` (encrypted at rest, versioned rotation, access tracking) bound config-driven so an external vault can swap in; `llm_providers.vault_secret_id` lets the runtime resolve a provider's API key from the vault at call time (`AgentRunner::buildRequest` → `LlmRequest::apiKey` → `AiLlmRouter` config override), so a central rotation takes effect on the next run — proven E2E. **Advanced model routing**: a per-agent `ModelRoutingPolicy` (strategy cost/latency/balanced, ordered primary+fallback chain, cost/latency ceilings) applied by `App\Support\Runtime\Routing\ModelRouter` in `AgentRunner::process` — filters candidates by environment availability, sensitivity clearance, cost ceiling, and recent `ProviderHealth` (model-attributable failure rate + latency from the run history), records the decision on the run trace, and **fails over** along the chain when a model call errors mid-run. **Human-in-the-loop runtime approval**: a per-agent `requires_runtime_approval` flag (or a team `runtime_approval_sensitivity` threshold) pauses a run at `requires_approval` via the existing approval system (new `ApprovalType::RuntimeAction`, subject = the run); approving resumes it (worker-driven), rejecting fails it `approval_denied`. **Break-glass / incident response**: `BreakGlassManager` performs one-click audited containment — revoke a credential, disable a model, shut down a connector, suspend a webhook, or freeze/lift an application's runtime — each recording an `IncidentAction` (the immutable timeline) + a high-severity audit event; an `IncidentGuard` rejects runs against a frozen application (controlled `runtime_frozen` 423) and the runtime halts in-flight frozen runs. **Enterprise audit export**: `AuditExporter` + `GET /audit-export` streams a filtered, SHA-256-signed (manifest + `X-Maac-Audit-Checksum`) JSON/CSV slice of the audit log for security review, on top of the Phase 5 audit retention controls. New console pages (Secrets Vault, Model Routing, Enterprise Identity, Incident Response) ride the shared `maac` prop via `EnterpriseConsoleData`. Verified: **776 Pest tests at 100 % line coverage** (incl. a `Phase6GEnterpriseTest` E2E chaining SSO role mapping → vault rotation → routing fail-over → runtime approval → break-glass freeze → signed audit export), PHPStan L7, Pint, ESLint, Prettier, `tsc` (frontend + SDK), 30 Node tests, `maac:sdk-fixtures --check`, and `npm run build` all green via `composer ci:check` — plus a live Chrome walkthrough of all four new pages + the login SSO button (which caught and fixed a Radix empty-`value` Select crash on the incidents page) and an end-to-end "Store secret" write (toast + DB persistence) with no console errors. The SDK contract is unchanged (this phase hardens the console/runtime, not the SDK surface); **read-only DB (`db`) remains the only documented `unsupported_execution_mode`**.
+
 #### Goal
 
 Harden MAAC for enterprise operation once the integration and runtime surfaces have repeatable E2E proof.
 
 #### Checklist
 
-- [ ] Integrate enterprise SSO/IAM for web users, mapped to MAAC roles and project/application membership.
-- [ ] Integrate a secrets vault for LLM provider keys, application credential material, remote tool secrets, webhook secrets, and connector credentials.
-- [ ] Add advanced model routing policies for sensitivity, cost, latency, fallback, provider health, and environment.
-- [ ] Add human-in-the-loop approval steps for sensitive runtime actions.
-- [ ] Add enterprise audit export and retention controls for security review.
-- [ ] Add break-glass and incident-response controls for credential revocation, model disablement, connector shutdown, and webhook suspension.
-- [ ] Add E2E regression coverage proving SSO role mapping, vault-backed secret rotation, advanced routing, and human approvals.
+- [x] Integrate enterprise SSO/IAM for web users, mapped to MAAC roles and project/application membership.
+- [x] Integrate a secrets vault for LLM provider keys, application credential material, remote tool secrets, webhook secrets, and connector credentials.
+- [x] Add advanced model routing policies for sensitivity, cost, latency, fallback, provider health, and environment.
+- [x] Add human-in-the-loop approval steps for sensitive runtime actions.
+- [x] Add enterprise audit export and retention controls for security review.
+- [x] Add break-glass and incident-response controls for credential revocation, model disablement, connector shutdown, and webhook suspension.
+- [x] Add E2E regression coverage proving SSO role mapping, vault-backed secret rotation, advanced routing, and human approvals.
 
 #### Deliverables
 

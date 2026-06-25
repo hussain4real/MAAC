@@ -32,6 +32,10 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, AuditEvent> $auditEvents
  * @property-read Collection<int, ApprovalRequest> $approvalRequests
  * @property-read Collection<int, QuotaLimit> $quotaLimits
+ * @property-read Collection<int, VaultSecret> $vaultSecrets
+ * @property-read Collection<int, ModelRoutingPolicy> $modelRoutingPolicies
+ * @property-read Collection<int, IncidentAction> $incidentActions
+ * @property-read Collection<int, SsoConnection> $ssoConnections
  * @property-read GovernanceSetting|null $governanceSetting
  */
 #[Fillable(['name', 'slug', 'is_personal'])]
@@ -161,6 +165,46 @@ class Team extends Model
     public function quotaLimits(): HasMany
     {
         return $this->hasMany(QuotaLimit::class);
+    }
+
+    /**
+     * Get the vault-held secrets owned by this team.
+     *
+     * @return HasMany<VaultSecret, $this>
+     */
+    public function vaultSecrets(): HasMany
+    {
+        return $this->hasMany(VaultSecret::class);
+    }
+
+    /**
+     * Get the advanced model routing policies owned by this team.
+     *
+     * @return HasMany<ModelRoutingPolicy, $this>
+     */
+    public function modelRoutingPolicies(): HasMany
+    {
+        return $this->hasMany(ModelRoutingPolicy::class);
+    }
+
+    /**
+     * Get the break-glass / incident-response actions recorded for this team.
+     *
+     * @return HasMany<IncidentAction, $this>
+     */
+    public function incidentActions(): HasMany
+    {
+        return $this->hasMany(IncidentAction::class);
+    }
+
+    /**
+     * Get the enterprise identity (SSO) connections for this team.
+     *
+     * @return HasMany<SsoConnection, $this>
+     */
+    public function ssoConnections(): HasMany
+    {
+        return $this->hasMany(SsoConnection::class);
     }
 
     /**

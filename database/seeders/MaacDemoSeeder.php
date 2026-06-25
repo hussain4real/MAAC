@@ -10,11 +10,17 @@ use App\Enums\Environment;
 use App\Enums\EvaluationCaseKind;
 use App\Enums\EvaluationStatus;
 use App\Enums\ImplStatus;
+use App\Enums\IncidentActionType;
 use App\Enums\MaacRole;
 use App\Enums\QuotaScope;
+use App\Enums\RoutingStrategy;
 use App\Enums\Sensitivity;
+use App\Enums\SsoConnectionStatus;
+use App\Enums\SsoProvider;
+use App\Enums\TeamRole;
 use App\Enums\ToolScope;
 use App\Enums\TraceEventType;
+use App\Enums\VaultSecretKind;
 use App\Models\Agent;
 use App\Models\AgentRun;
 use App\Models\Application;
@@ -29,17 +35,20 @@ use App\Models\LlmProvider;
 use App\Models\McpConnector;
 use App\Models\Project;
 use App\Models\QuotaLimit;
+use App\Models\SsoConnection;
 use App\Models\Team;
 use App\Models\ToolAssignment;
 use App\Models\ToolContract;
 use App\Models\User;
 use App\Support\Runtime\Knowledge\KnowledgeIndexer;
 use App\Support\Sdk\SdkClientManager;
+use App\Support\Secrets\Contracts\SecretVault;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * Seeds the MAAC demo team with the Phase 1 console fixture
@@ -73,6 +82,85 @@ class MaacDemoSeeder extends Seeder
         $this->seedAuditEvents($team, $apps, $agents, $user);
         $this->seedGovernance($team, $apps, $agents, $tools, $llms);
         $this->seedEvaluations($team, $agents);
+        $this->seedEnterprise($team, $user, $apps, $projects, $agents, $llms);
+    }
+
+    /**
+     * Seed the Phase 6G enterprise surfaces: vault secrets (one bound to a model
+     * for runtime resolution, one rotated), an advanced routing policy, an active
+     * SSO connection with group→role mapping, and an incident-response timeline.
+     *
+     * @param  array<string, Application>  $apps
+     * @param  array<string, Project>  $projects
+     * @param  array<string, Agent>  $agents
+     * @param  array<string, LlmProvider>  $llms
+     */
+    private function seedEnterprise(Team $team, User $user, array $apps, array $projects, array $agents, array $llms): void
+    {
+        $vault = app(SecretVault::class);
+
+        $primaryModel = $llms['gpt-4o'];
+        $modelKey = $vault->store($team, VaultSecretKind::LlmKey->reference($primaryModel->slug), $primaryModel->name.' API key', VaultSecretKind::LlmKey, 'sk-demo-'.Str::random(28), $user);
+        $primaryModel->update(['vault_secret_id' => $modelKey->id]);
+        $vault->store($team, VaultSecretKind::Webhook->reference('partner-logistics'), 'Partner Logistics webhook secret', VaultSecretKind::Webhook, 'whsec_'.Str::random(40), $user);
+        $rotating = $vault->store($team, VaultSecretKind::Connector->reference('partner-mcp'), 'Partner MCP credential', VaultSecretKind::Connector, 'mcp-old-token', $user);
+        $vault->rotate($rotating, 'mcp-new-token');
+
+        $team->modelRoutingPolicies()->updateOrCreate(['agent_id' => $agents['ag_ops_summary']->id], [
+            'name' => 'Operations tiered routing',
+            'strategy' => RoutingStrategy::CostOptimized,
+            'primary_provider_id' => $llms['gpt-4o-mini']->id,
+            'fallback_provider_ids' => [$llms['gpt-4o']->id, $llms['claude-37-sonnet']->id],
+            'max_cost_per_1k' => 18,
+            'max_latency_ms' => 8000,
+            'enabled' => true,
+            'created_by' => $user->id,
+        ]);
+
+        SsoConnection::updateOrCreate(['slug' => 'milaha-entra-id'], [
+            'team_id' => $team->id,
+            'name' => 'Milaha Entra ID',
+            'provider' => SsoProvider::Oidc,
+            'authorize_url' => 'https://login.microsoftonline.com/milaha/oauth2/v2.0/authorize',
+            'token_url' => 'https://login.microsoftonline.com/milaha/oauth2/v2.0/token',
+            'userinfo_url' => 'https://graph.microsoft.com/oidc/userinfo',
+            'client_id' => 'maac-console-app',
+            'client_secret' => 'demo-entra-secret',
+            'scopes' => 'openid profile email groups',
+            'default_team_role' => TeamRole::Member,
+            'group_role_mappings' => [
+                ['group' => 'MAAC-Platform-Admins', 'team_role' => 'admin'],
+                ['group' => 'MAAC-Developers', 'team_role' => 'member', 'maac_role' => 'developer', 'project_slug' => array_values($projects)[0]->slug],
+            ],
+            'auto_provision' => true,
+            'status' => SsoConnectionStatus::Active,
+            'created_by' => $user->id,
+        ]);
+
+        $app = array_values($apps)[0];
+        $team->incidentActions()->firstOrCreate(
+            ['type' => IncidentActionType::FreezeApplication, 'subject_id' => $app->id],
+            [
+                'actor_user_id' => $user->id,
+                'actor_label' => $user->name,
+                'subject_type' => $app->getMorphClass(),
+                'subject_label' => $app->name,
+                'reason' => 'Suspected credential leak during a partner integration test.',
+                'environment' => $app->environment,
+                'reverted_at' => Carbon::now()->subDays(2),
+                'reverted_by' => $user->id,
+                'created_at' => Carbon::now()->subDays(3),
+            ],
+        );
+        $team->incidentActions()->firstOrCreate(
+            ['type' => IncidentActionType::ShutdownConnector, 'subject_label' => 'Partner Logistics MCP'],
+            [
+                'actor_user_id' => $user->id,
+                'actor_label' => $user->name,
+                'reason' => 'Connector returned malformed tool output during an incident drill.',
+                'created_at' => Carbon::now()->subDays(1),
+            ],
+        );
     }
 
     /**

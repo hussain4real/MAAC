@@ -6,6 +6,7 @@ use App\Enums\RunMode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StartRunRequest;
 use App\Jobs\ProcessAgentRun;
+use App\Support\Governance\IncidentGuard;
 use App\Support\Governance\QuotaGuard;
 use App\Support\Runtime\AgentRunner;
 use App\Support\Runtime\RunAuthorizer;
@@ -28,11 +29,12 @@ class AgentRunController extends Controller
      * for a worker and returned `202`, to be observed via polling, streaming, or
      * a webhook.
      */
-    public function store(StartRunRequest $request, RunAuthorizer $authorizer, QuotaGuard $quota, AgentRunner $runner, string $agentSlug): JsonResponse
+    public function store(StartRunRequest $request, RunAuthorizer $authorizer, IncidentGuard $incidents, QuotaGuard $quota, AgentRunner $runner, string $agentSlug): JsonResponse
     {
         $context = SdkContext::fromRequest($request);
         $agent = $authorizer->resolveAgent($context->application, $agentSlug);
 
+        $incidents->assert($context->application);
         $quota->assert($context->application, $agent, $context->environment);
 
         if ($request->mode() === RunMode::Async) {

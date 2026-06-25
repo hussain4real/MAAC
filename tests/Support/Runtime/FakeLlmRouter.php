@@ -16,9 +16,9 @@ use RuntimeException;
 class FakeLlmRouter implements LlmRouter
 {
     /**
-     * The scripted completions, returned in order.
+     * The scripted completions (or exceptions to throw), returned in order.
      *
-     * @var array<int, LlmCompletion>
+     * @var array<int, LlmCompletion|\Throwable>
      */
     public array $queue = [];
 
@@ -54,7 +54,17 @@ class FakeLlmRouter implements LlmRouter
     }
 
     /**
-     * Produce the next scripted completion.
+     * Script a model error for the next turn (drives the routing fail-over path).
+     */
+    public function throwThen(string $message = 'provider error'): self
+    {
+        $this->queue[] = new RuntimeException($message);
+
+        return $this;
+    }
+
+    /**
+     * Produce the next scripted completion, throwing a scripted error instead.
      */
     public function complete(LlmRequest $request): LlmCompletion
     {
@@ -68,6 +78,10 @@ class FakeLlmRouter implements LlmRouter
 
         if (array_key_exists($this->index, $this->queue)) {
             $this->index++;
+        }
+
+        if ($completion instanceof \Throwable) {
+            throw $completion;
         }
 
         return $completion;

@@ -4,11 +4,13 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Enums\SsoConnectionStatus;
 use App\Http\Responses\LoginResponse;
 use App\Http\Responses\PasskeyLoginResponse;
 use App\Http\Responses\RegisterResponse;
 use App\Http\Responses\TwoFactorLoginResponse;
 use App\Http\Responses\VerifyEmailResponse;
+use App\Models\SsoConnection;
 use App\Models\TeamInvitation;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -66,6 +68,7 @@ class FortifyServiceProvider extends ServiceProvider
             'canResetPassword' => Features::enabled(Features::resetPasswords()),
             'status' => $request->session()->get('status'),
             'teamInvitation' => $this->teamInvitation($request),
+            'ssoConnections' => $this->ssoConnections(),
         ]));
 
         Fortify::resetPasswordView(fn (Request $request) => Inertia::render('auth/reset-password', [
@@ -112,6 +115,24 @@ class FortifyServiceProvider extends ServiceProvider
                 ($credentialId ?: $request->session()->getId()).'|'.$request->ip(),
             );
         });
+    }
+
+    /**
+     * Get the active enterprise SSO connections to offer on the login screen.
+     *
+     * @return array<int, array{name: string, loginUrl: string}>
+     */
+    private function ssoConnections(): array
+    {
+        return SsoConnection::query()
+            ->where('status', SsoConnectionStatus::Active)
+            ->orderBy('name')
+            ->get()
+            ->map(fn (SsoConnection $connection): array => [
+                'name' => $connection->name,
+                'loginUrl' => route('sso.redirect', ['ssoConnection' => $connection->slug]),
+            ])
+            ->all();
     }
 
     /**

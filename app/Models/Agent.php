@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -28,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property string $version
  * @property AgentStatus $status
  * @property Sensitivity $sensitivity
+ * @property bool $requires_runtime_approval
  * @property string $system_prompt
  * @property float $temperature
  * @property int $max_tokens
@@ -46,8 +48,9 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, ToolContract> $tools
  * @property-read Collection<int, AgentRun> $runs
  * @property-read Collection<int, Evaluation> $evaluations
+ * @property-read ModelRoutingPolicy|null $routingPolicy
  */
-#[Fillable(['project_id', 'llm_provider_id', 'current_version_id', 'slug', 'agent_slug', 'name', 'version', 'status', 'sensitivity', 'system_prompt', 'temperature', 'max_tokens', 'description', 'success_rate', 'runs_7d', 'last_run_at', 'published_at'])]
+#[Fillable(['project_id', 'llm_provider_id', 'current_version_id', 'slug', 'agent_slug', 'name', 'version', 'status', 'sensitivity', 'requires_runtime_approval', 'system_prompt', 'temperature', 'max_tokens', 'description', 'success_rate', 'runs_7d', 'last_run_at', 'published_at'])]
 class Agent extends Model
 {
     /** @use HasFactory<AgentFactory> */
@@ -125,6 +128,16 @@ class Agent extends Model
     }
 
     /**
+     * Get the advanced model routing policy for the agent, if one is defined.
+     *
+     * @return HasOne<ModelRoutingPolicy, $this>
+     */
+    public function routingPolicy(): HasOne
+    {
+        return $this->hasOne(ModelRoutingPolicy::class);
+    }
+
+    /**
      * Get the application the agent belongs to (through its project).
      */
     public function application(): ?Application
@@ -158,6 +171,7 @@ class Agent extends Model
         return [
             'status' => AgentStatus::class,
             'sensitivity' => Sensitivity::class,
+            'requires_runtime_approval' => 'boolean',
             'temperature' => 'float',
             'max_tokens' => 'integer',
             'success_rate' => 'float',

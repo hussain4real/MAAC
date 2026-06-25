@@ -1,4 +1,4 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form, Head, usePage } from '@inertiajs/react';
 import InputError from '@/components/input-error';
 import PasskeyVerify from '@/components/passkey-verify';
 import PasswordInput from '@/components/password-input';
@@ -14,17 +14,23 @@ import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 import type { TeamInvitationContext } from '@/types';
 
+type SsoConnection = { name: string; loginUrl: string };
+
 type Props = {
     status?: string;
     canResetPassword: boolean;
     teamInvitation?: TeamInvitationContext | null;
+    ssoConnections?: SsoConnection[];
 };
 
 export default function Login({
     status,
     canResetPassword,
     teamInvitation,
+    ssoConnections = [],
 }: Props) {
+    const ssoError = usePage<{ errors: { sso?: string } }>().props.errors?.sso;
+
     return (
         <>
             <Head title="Log in" />
@@ -34,6 +40,34 @@ export default function Login({
                     invitation={teamInvitation}
                     action="Log in"
                 />
+            )}
+
+            {ssoError && (
+                <div className="mb-4 rounded-md bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-700 dark:bg-red-950/40 dark:text-red-400">
+                    {ssoError}
+                </div>
+            )}
+
+            {ssoConnections.length > 0 && (
+                <div className="mb-6 flex flex-col gap-3">
+                    {ssoConnections.map((connection) => (
+                        <Button
+                            key={connection.loginUrl}
+                            asChild
+                            variant="outline"
+                            className="w-full"
+                        >
+                            <a href={connection.loginUrl}>
+                                Continue with {connection.name}
+                            </a>
+                        </Button>
+                    ))}
+                    <div className="relative my-1 text-center text-xs text-muted-foreground">
+                        <span className="bg-background px-2">
+                            or sign in with email
+                        </span>
+                    </div>
+                </div>
             )}
 
             <PasskeyVerify />

@@ -52,6 +52,21 @@ test('the AI router parses a tool-call envelope across a full transcript', funct
         ->and($completion->toolArguments)->toBe(['q' => 'x']);
 });
 
+test('the AI router applies a vault-resolved key to the provider for the call', function () {
+    Ai::fakeAgent(AnonymousAgent::class, ['ok']);
+    config(['ai.providers.anthropic.key' => 'env-key']);
+
+    (new AiLlmRouter)->complete(new LlmRequest(
+        providerDriver: 'anthropic',
+        modelCode: 'claude-3',
+        systemPrompt: 'You help.',
+        messages: [LlmMessage::user('hi')],
+        apiKey: 'vault-key',
+    ));
+
+    expect(config('ai.providers.anthropic.key'))->toBe('vault-key');
+});
+
 test('the AI router treats an envelope for an unknown tool as plain text', function () {
     Ai::fakeAgent(AnonymousAgent::class, ['{"tool":"ghost","arguments":{}}']);
 

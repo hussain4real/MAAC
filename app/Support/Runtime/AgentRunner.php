@@ -16,15 +16,20 @@ use App\Models\Agent;
 use App\Models\AgentRun;
 use App\Models\Application;
 use App\Models\LlmProvider;
+use App\Models\Team;
 use App\Models\ToolCall;
 use App\Models\ToolContract;
+use App\Support\Governance\ApprovalManager;
 use App\Support\Governance\RunRedactor;
+use App\Support\Governance\RuntimeApprovalPolicy;
 use App\Support\Runtime\Contracts\LlmRouter;
 use App\Support\Runtime\HostedTools\HostedToolRegistry;
 use App\Support\Runtime\Knowledge\KnowledgeToolExecutor;
 use App\Support\Runtime\Mcp\McpToolExecutor;
 use App\Support\Runtime\Remote\RemoteHttpToolExecutor;
+use App\Support\Runtime\Routing\ModelRouter;
 use App\Support\Sdk\ToolSchema;
+use App\Support\Secrets\Contracts\SecretVault;
 use App\Support\Webhooks\RunWebhookEmitter;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Date;
@@ -49,6 +54,10 @@ class AgentRunner
         private readonly RemoteHttpToolExecutor $httpTools,
         private readonly McpToolExecutor $connectorTools,
         private readonly KnowledgeToolExecutor $knowledgeTools,
+        private readonly SecretVault $vault,
+        private readonly ModelRouter $modelRouter,
+        private readonly RuntimeApprovalPolicy $approvalPolicy,
+        private readonly ApprovalManager $approvals,
     ) {}
 
     /**
@@ -115,19 +124,82 @@ class AgentRunner
      */
     public function process(AgentRun $run): AgentRun
     {
-        $run->loadMissing(['agent.tools', 'agent.llmProvider']);
-        $provider = $run->agent->llmProvider;
+        $run->loadMissing(['agent.tools', 'agent.llmProvider', 'agent.routingPolicy', 'llmProvider.vaultSecret', 'application.team']);
 
-        if ($run->environment === null || ! $provider->isAvailableIn($run->environment->value)) {
-            return $this->fail($run, 'model_unavailable', 'The agent model is not approved or available in this environment.');
+        if ($run->application->isRuntimeFrozen()) {
+            return $this->fail($run, 'runtime_frozen', 'The application runtime is frozen by an incident control.');
         }
 
-        $this->tracer->record($run, TraceEventType::ModelSelected, 'Model selected.', ['model' => $provider->code]);
+        $decision = $this->modelRouter->select($run);
+
+        if (! $decision->provider instanceof LlmProvider) {
+            return $this->fail($run, 'model_unavailable', $decision->rationale);
+        }
+
+        $this->applyProvider($run, $decision->provider);
+        $run->update(['state' => [...$run->state ?? [], 'routing' => [
+            'chain' => $decision->chainIds(),
+            'tried' => [$decision->provider->id],
+        ]]]);
+
+        $this->tracer->record($run, TraceEventType::ModelSelected, 'Model selected.', $decision->traceData());
         $this->tracer->record($run, TraceEventType::PromptPrepared, 'Prompt prepared.');
+
+        $team = $run->application->team;
+
+        if ($this->approvalPolicy->requires($run, $team)) {
+            return $this->pauseForApproval($run, $team);
+        }
 
         $this->markRunning($run);
 
         return $this->advance($run);
+    }
+
+    /**
+     * Pause a sensitive run for human approval: record the gate, open a governance
+     * approval request, and notify any subscribed webhook. A reviewer approves to
+     * resume the run or rejects to fail it.
+     */
+    private function pauseForApproval(AgentRun $run, Team $team): AgentRun
+    {
+        $run->update(['status' => RunStatus::RequiresApproval]);
+        $this->approvals->requestRuntimeApproval($run, $team);
+        $this->tracer->record($run, TraceEventType::RequiresApproval, 'Run requires human approval.', [
+            'reason' => $this->approvalPolicy->reason($run),
+        ]);
+        $this->webhooks->emit($run, WebhookEventType::RunRequiresApproval);
+
+        return $run;
+    }
+
+    /**
+     * Resume a run a reviewer approved: mark it running again so a worker can
+     * drive it to completion. No-op if the run is no longer awaiting approval.
+     */
+    public function approveRuntime(AgentRun $run): void
+    {
+        if ($run->status !== RunStatus::RequiresApproval) {
+            return;
+        }
+
+        $run->loadMissing(['agent.tools', 'agent.llmProvider', 'agent.routingPolicy', 'llmProvider.vaultSecret']);
+        $this->tracer->record($run, TraceEventType::ApprovalGranted, 'Run approved by a reviewer.');
+        $this->markRunning($run);
+    }
+
+    /**
+     * Fail a run a reviewer rejected. No-op if it is no longer awaiting approval.
+     */
+    public function denyRuntime(AgentRun $run): AgentRun
+    {
+        if ($run->status !== RunStatus::RequiresApproval) {
+            return $run;
+        }
+
+        $this->tracer->record($run, TraceEventType::ApprovalDenied, 'Run denied by a reviewer.');
+
+        return $this->fail($run, 'approval_denied', 'The run was denied by a reviewer.');
     }
 
     /**
@@ -136,7 +208,7 @@ class AgentRunner
      */
     public function drive(AgentRun $run): AgentRun
     {
-        $run->loadMissing(['agent.tools', 'agent.llmProvider']);
+        $run->loadMissing(['agent.tools', 'agent.llmProvider', 'llmProvider.vaultSecret']);
 
         return $this->advance($run);
     }
@@ -185,7 +257,11 @@ class AgentRunner
      */
     public function acceptToolResult(AgentRun $run, string $toolCallId, array $result): AgentRun
     {
-        $run->loadMissing(['agent.tools', 'agent.llmProvider']);
+        $run->loadMissing(['agent.tools', 'agent.llmProvider', 'llmProvider.vaultSecret', 'application']);
+
+        if ($run->application->isRuntimeFrozen()) {
+            throw RuntimeRequestException::runtimeFrozen();
+        }
 
         if (! $run->isWaitingForClient()) {
             throw RuntimeRequestException::runNotWaiting();
@@ -279,23 +355,83 @@ class AgentRunner
         try {
             $completion = $this->router->complete($this->buildRequest($run, $agent));
         } catch (Throwable $exception) {
+            if ($this->failover($run, $exception)) {
+                return $this->runTurn($run, $agent);
+            }
+
             $this->fail($run, 'model_error', $exception->getMessage());
 
             return null;
         }
 
-        $this->recordUsage($run, $completion->usage, $agent->llmProvider);
+        $this->recordUsage($run, $completion->usage, $this->runProvider($run, $agent));
         $this->incrementSteps($run);
 
         return $completion;
     }
 
     /**
-     * Build the router request from the run state and agent configuration.
+     * Fail over to the next untried model in the run's routing chain after a model
+     * call error. Returns false when no policy fallback remains (so the run fails).
+     */
+    private function failover(AgentRun $run, Throwable $exception): bool
+    {
+        $routing = $run->state['routing'] ?? null;
+
+        if (! is_array($routing)) {
+            return false;
+        }
+
+        $chain = array_values(array_filter($routing['chain'] ?? [], 'is_string'));
+        $tried = array_values(array_filter($routing['tried'] ?? [], 'is_string'));
+
+        $next = collect($chain)->first(fn (string $id): bool => ! in_array($id, $tried, true));
+
+        if ($next === null) {
+            return false;
+        }
+
+        $provider = LlmProvider::find($next);
+
+        if (! $provider instanceof LlmProvider) {
+            return false;
+        }
+
+        $tried[] = $next;
+        $state = $run->state ?? [];
+        $state['routing']['tried'] = $tried;
+        $run->update(['state' => $state]);
+        $this->applyProvider($run, $provider);
+
+        $this->tracer->record($run, TraceEventType::ModelFailover, "Model failover to {$provider->code}.", [
+            'model' => $provider->code,
+            'reason' => $exception->getMessage(),
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Record the selected model on the run and bind it as the active provider
+     * (with its vault key loaded) for subsequent turns.
+     */
+    private function applyProvider(AgentRun $run, LlmProvider $provider): void
+    {
+        if ($run->llm_provider_id !== $provider->id) {
+            $run->update(['llm_provider_id' => $provider->id]);
+        }
+
+        $run->setRelation('llmProvider', $provider->loadMissing('vaultSecret'));
+    }
+
+    /**
+     * Build the router request from the run state and the selected model. The
+     * provider's API key is resolved from the secrets vault when one is bound, so
+     * a central rotation takes effect on the next turn without a redeploy.
      */
     private function buildRequest(AgentRun $run, Agent $agent): LlmRequest
     {
-        $provider = $agent->llmProvider;
+        $provider = $this->runProvider($run, $agent);
 
         return new LlmRequest(
             providerDriver: $provider->driver(),
@@ -306,7 +442,18 @@ class AgentRunner
             temperature: $agent->temperature,
             maxTokens: $agent->max_tokens,
             timeoutSeconds: $this->turnTimeout(),
+            apiKey: $provider->resolveApiKey($this->vault),
         );
+    }
+
+    /**
+     * Resolve the model the run executes on — the provider recorded on the run
+     * (which advanced routing may have selected), falling back to the agent's
+     * configured model.
+     */
+    private function runProvider(AgentRun $run, Agent $agent): LlmProvider
+    {
+        return $run->llmProvider ?? $agent->llmProvider;
     }
 
     /**
