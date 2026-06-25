@@ -3,13 +3,17 @@
 namespace App\Actions\Maac;
 
 use App\Enums\ApprovalStatus;
+use App\Enums\ApprovalType;
+use App\Models\AgentRun;
 use App\Models\ApprovalRequest;
 use App\Models\User;
+use App\Support\Runtime\AgentRunner;
 use Illuminate\Support\Carbon;
 
 /**
  * Rejects a governance approval request, recording the decision and reason
- * without applying the gated change.
+ * without applying the gated change. Rejecting a runtime approval additionally
+ * fails the paused run it gated.
  */
 class RejectApprovalRequest
 {
@@ -25,6 +29,10 @@ class RejectApprovalRequest
             'decision_note' => $note,
             'decided_at' => Carbon::now(),
         ]);
+
+        if ($request->type === ApprovalType::RuntimeAction && $request->subject instanceof AgentRun) {
+            app(AgentRunner::class)->denyRuntime($request->subject);
+        }
 
         return $request;
     }

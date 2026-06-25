@@ -4,26 +4,36 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Maac\AgentController;
 use App\Http\Controllers\Maac\ApplicationController;
 use App\Http\Controllers\Maac\ApprovalRequestController;
+use App\Http\Controllers\Maac\AuditExportController;
 use App\Http\Controllers\Maac\ConsoleController;
 use App\Http\Controllers\Maac\CredentialController;
 use App\Http\Controllers\Maac\EvaluationCaseController;
 use App\Http\Controllers\Maac\EvaluationController;
 use App\Http\Controllers\Maac\EvaluationDatasetController;
 use App\Http\Controllers\Maac\GovernanceSettingController;
+use App\Http\Controllers\Maac\IncidentController;
 use App\Http\Controllers\Maac\KnowledgeDocumentController;
 use App\Http\Controllers\Maac\KnowledgeSourceController;
 use App\Http\Controllers\Maac\LlmProviderController;
 use App\Http\Controllers\Maac\McpConnectorController;
+use App\Http\Controllers\Maac\ModelRoutingPolicyController;
 use App\Http\Controllers\Maac\ProjectController;
 use App\Http\Controllers\Maac\QuotaLimitController;
+use App\Http\Controllers\Maac\SsoConnectionController;
 use App\Http\Controllers\Maac\ToolContractController;
+use App\Http\Controllers\Maac\VaultSecretController;
 use App\Http\Controllers\Maac\WebhookDeliveryController;
 use App\Http\Controllers\Maac\WebhookEndpointController;
+use App\Http\Controllers\SsoController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureTeamMembership;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
+
+// Enterprise SSO login (guest-accessible auth entry points).
+Route::get('sso/{ssoConnection}/redirect', [SsoController::class, 'redirect'])->name('sso.redirect');
+Route::get('sso/{ssoConnection}/callback', [SsoController::class, 'callback'])->name('sso.callback');
 
 Route::prefix('{current_team}')
     ->middleware(['auth', 'verified', EnsureTeamMembership::class])
@@ -50,6 +60,10 @@ Route::prefix('{current_team}')
         Route::get('evaluations', [ConsoleController::class, 'evaluations'])->name('evaluations');
         Route::get('governance', [ConsoleController::class, 'governance'])->name('governance');
         Route::get('webhooks', [ConsoleController::class, 'webhooks'])->name('webhooks');
+        Route::get('vault', [ConsoleController::class, 'vault'])->name('vault');
+        Route::get('routing', [ConsoleController::class, 'routing'])->name('routing');
+        Route::get('identity', [ConsoleController::class, 'identity'])->name('identity');
+        Route::get('incidents', [ConsoleController::class, 'incidents'])->name('incidents');
         Route::get('platform-settings', [ConsoleController::class, 'settings'])->name('platform-settings');
 
         // MAAC console (Phase 2 — database-backed writes)
@@ -97,6 +111,7 @@ Route::prefix('{current_team}')
         Route::post('approvals/{approvalRequest}/approve', [ApprovalRequestController::class, 'approve'])->name('approvals.approve');
         Route::post('approvals/{approvalRequest}/reject', [ApprovalRequestController::class, 'reject'])->name('approvals.reject');
         Route::put('governance-settings', [GovernanceSettingController::class, 'update'])->name('governance-settings.update');
+        Route::get('audit-export', [AuditExportController::class, 'download'])->name('audit-export');
         Route::resource('quotas', QuotaLimitController::class)
             ->only(['store', 'update', 'destroy'])
             ->parameters(['quotas' => 'quotaLimit']);
@@ -107,6 +122,22 @@ Route::prefix('{current_team}')
             ->parameters(['webhooks' => 'webhookEndpoint']);
         Route::post('webhooks/{webhookEndpoint}/rotate', [WebhookEndpointController::class, 'rotate'])->name('webhooks.rotate');
         Route::post('webhook-deliveries/{webhookDelivery}/replay', [WebhookDeliveryController::class, 'replay'])->name('webhook-deliveries.replay');
+
+        // MAAC console (Phase 6G — enterprise identity, secrets & advanced governance)
+        Route::resource('vault-secrets', VaultSecretController::class)
+            ->only(['store', 'destroy'])
+            ->parameters(['vault-secrets' => 'vaultSecret']);
+        Route::post('vault-secrets/{vaultSecret}/rotate', [VaultSecretController::class, 'rotate'])->name('vault-secrets.rotate');
+
+        Route::resource('routing-policies', ModelRoutingPolicyController::class)
+            ->only(['store', 'update', 'destroy'])
+            ->parameters(['routing-policies' => 'modelRoutingPolicy']);
+
+        Route::post('incidents', [IncidentController::class, 'store'])->name('incidents.store');
+
+        Route::resource('sso-connections', SsoConnectionController::class)
+            ->only(['store', 'update', 'destroy'])
+            ->parameters(['sso-connections' => 'ssoConnection']);
     });
 
 Route::middleware(['auth'])->group(function () {

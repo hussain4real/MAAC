@@ -18,6 +18,7 @@ enum ApprovalType: string
     case ModelAccess = 'model_access';
     case CredentialChange = 'credential_change';
     case KnowledgeIngestion = 'knowledge_ingestion';
+    case RuntimeAction = 'runtime_action';
 
     /**
      * Get the display label for the approval type (e.g. "Agent Publication").
@@ -38,6 +39,7 @@ enum ApprovalType: string
             self::ModelAccess => 'models',
             self::CredentialChange => 'data',
             self::KnowledgeIngestion => 'data',
+            self::RuntimeAction => 'runtime',
         };
     }
 

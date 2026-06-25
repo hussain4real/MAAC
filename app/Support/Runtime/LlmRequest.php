@@ -22,5 +22,6 @@ final readonly class LlmRequest
         public float $temperature = 0.7,
         public int $maxTokens = 1024,
         public int $timeoutSeconds = 30,
+        public ?string $apiKey = null,
     ) {}
 }

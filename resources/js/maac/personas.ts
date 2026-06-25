@@ -21,6 +21,10 @@ export type ScreenId =
     | 'llm'
     | 'governance'
     | 'webhooks'
+    | 'vault'
+    | 'routing'
+    | 'identity'
+    | 'incidents'
     | 'settings';
 
 export type NavItem = { id: ScreenId; label: string; icon: string };
@@ -59,12 +63,20 @@ export const NAV_GROUPS: NavGroup[] = [
             { id: 'runs', label: 'Runs & Audit Logs', icon: 'runs' },
             { id: 'webhooks', label: 'Webhooks', icon: 'send' },
             { id: 'llm', label: 'LLM Providers', icon: 'llm' },
+            { id: 'routing', label: 'Model Routing', icon: 'flow' },
         ],
     },
     {
         title: 'Govern',
         items: [
             { id: 'governance', label: 'Governance', icon: 'governance' },
+            { id: 'vault', label: 'Secrets Vault', icon: 'key' },
+            { id: 'identity', label: 'Enterprise Identity', icon: 'lock' },
+            {
+                id: 'incidents',
+                label: 'Incident Response',
+                icon: 'shield-alert',
+            },
             { id: 'settings', label: 'Settings', icon: 'settings' },
         ],
     },
@@ -91,6 +103,10 @@ export const SCREEN_OF: Record<string, ScreenId> = {
     llm: 'llm',
     governance: 'governance',
     webhooks: 'webhooks',
+    vault: 'vault',
+    routing: 'routing',
+    identity: 'identity',
+    incidents: 'incidents',
     settings: 'settings',
 };
 
@@ -160,6 +176,7 @@ const ROLE_ALLOWED: Record<PersonaId, ScreenId[] | null> = {
         'runs',
         'governance',
         'webhooks',
+        'routing',
         'settings',
     ],
     dev: [

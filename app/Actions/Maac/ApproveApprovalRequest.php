@@ -8,12 +8,14 @@ use App\Enums\KnowledgeSourceStatus;
 use App\Enums\LlmStatus;
 use App\Exceptions\ApprovalBlockedException;
 use App\Models\Agent;
+use App\Models\AgentRun;
 use App\Models\ApprovalRequest;
 use App\Models\KnowledgeSource;
 use App\Models\LlmProvider;
 use App\Models\ToolContract;
 use App\Models\User;
 use App\Support\Governance\ApprovalGate;
+use App\Support\Runtime\AgentRunner;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -63,8 +65,20 @@ class ApproveApprovalRequest
             ApprovalType::ToolContract => $this->activateTool($request),
             ApprovalType::ModelAccess => $this->promoteModel($request),
             ApprovalType::KnowledgeIngestion => $this->activateSource($request),
+            ApprovalType::RuntimeAction => $this->resumeRun($request),
             ApprovalType::CredentialChange => null,
         };
+    }
+
+    /**
+     * Mark an approved sensitive run running again so a worker can drive it. The
+     * controller dispatches the worker after the approval transaction commits.
+     */
+    private function resumeRun(ApprovalRequest $request): void
+    {
+        if ($request->subject instanceof AgentRun) {
+            app(AgentRunner::class)->approveRuntime($request->subject);
+        }
     }
 
     /**

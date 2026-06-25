@@ -29,6 +29,8 @@ use Illuminate\Support\Carbon;
  * @property string $owner_email
  * @property Environment $environment
  * @property AppStatus $status
+ * @property Carbon|null $runtime_frozen_at
+ * @property int|null $runtime_frozen_by
  * @property string|null $stack
  * @property string|null $description
  * @property string|null $region
@@ -49,7 +51,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, AgentRun> $runs
  * @property-read Collection<int, WebhookEndpoint> $webhookEndpoints
  */
-#[Fillable(['team_id', 'slug', 'code', 'name', 'department', 'owner_name', 'owner_email', 'environment', 'status', 'stack', 'description', 'region', 'last_connected_at', 'projects_count', 'agents_count', 'tools_required', 'tools_implemented'])]
+#[Fillable(['team_id', 'slug', 'code', 'name', 'department', 'owner_name', 'owner_email', 'environment', 'status', 'runtime_frozen_at', 'runtime_frozen_by', 'stack', 'description', 'region', 'last_connected_at', 'projects_count', 'agents_count', 'tools_required', 'tools_implemented'])]
 class Application extends Model
 {
     /** @use HasFactory<ApplicationFactory> */
@@ -136,6 +138,15 @@ class Application extends Model
     }
 
     /**
+     * Whether the application's runtime is currently frozen by a break-glass
+     * incident control (no new runs are accepted and in-flight runs halt).
+     */
+    public function isRuntimeFrozen(): bool
+    {
+        return $this->runtime_frozen_at !== null;
+    }
+
+    /**
      * Get the most relevant credential status for display.
      */
     public function credentialStatus(): string
@@ -183,6 +194,7 @@ class Application extends Model
         return [
             'environment' => Environment::class,
             'status' => AppStatus::class,
+            'runtime_frozen_at' => 'datetime',
             'last_connected_at' => 'datetime',
             'projects_count' => 'integer',
             'agents_count' => 'integer',

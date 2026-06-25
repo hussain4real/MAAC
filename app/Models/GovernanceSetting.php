@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Environment;
+use App\Enums\Sensitivity;
 use Database\Factories\GovernanceSettingFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,12 +28,13 @@ use Illuminate\Support\Carbon;
  * @property bool $mask_sensitive_outputs
  * @property bool $block_restricted_logging
  * @property int|null $default_daily_run_quota
+ * @property string|null $runtime_approval_sensitivity
  * @property array<string, array<string, mixed>>|null $environment_overrides
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Team $team
  */
-#[Fillable(['team_id', 'retain_prompts_days', 'retain_responses_days', 'retain_tool_arguments_days', 'retain_tool_results_days', 'audit_retention_days', 'mask_sensitive_inputs', 'mask_sensitive_outputs', 'block_restricted_logging', 'default_daily_run_quota', 'environment_overrides'])]
+#[Fillable(['team_id', 'retain_prompts_days', 'retain_responses_days', 'retain_tool_arguments_days', 'retain_tool_results_days', 'audit_retention_days', 'mask_sensitive_inputs', 'mask_sensitive_outputs', 'block_restricted_logging', 'default_daily_run_quota', 'runtime_approval_sensitivity', 'environment_overrides'])]
 class GovernanceSetting extends Model
 {
     /** @use HasFactory<GovernanceSettingFactory> */
@@ -124,6 +126,18 @@ class GovernanceSetting extends Model
         $value = $this->resolve('default_daily_run_quota', $environment);
 
         return $value === null ? null : (int) $value;
+    }
+
+    /**
+     * Resolve the sensitivity threshold at or above which a run requires human
+     * approval before executing, honoring any per-environment override. Null
+     * disables the sensitivity-based runtime approval gate.
+     */
+    public function runtimeApprovalSensitivity(?Environment $environment = null): ?Sensitivity
+    {
+        $value = $this->resolve('runtime_approval_sensitivity', $environment);
+
+        return $value === null ? null : Sensitivity::from($value);
     }
 
     /**

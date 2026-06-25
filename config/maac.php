@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\Secrets\DatabaseSecretVault;
+
 return [
 
     /*
@@ -160,6 +162,61 @@ return [
         'deprecations' => [
             //
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Secrets Vault (Phase 6G)
+    |--------------------------------------------------------------------------
+    |
+    | The platform secrets vault is the governed system of record for sensitive
+    | credential material — approved LLM provider keys, application credentials,
+    | remote HTTP tool secrets, webhook signing secrets, and MCP connector
+    | credentials. `driver` is the bound implementation of the SecretVault
+    | contract; the default database driver encrypts material at rest. An
+    | enterprise deployment points this at an external vault driver (e.g. one
+    | backed by HashiCorp Vault or AWS Secrets Manager) without changing any
+    | caller, since every consumer depends on the interface.
+    |
+    */
+
+    'vault' => [
+        'driver' => env('MAAC_VAULT_DRIVER', DatabaseSecretVault::class),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Advanced Model Routing (Phase 6G)
+    |--------------------------------------------------------------------------
+    |
+    | Settings for the provider-health signal the model router uses to rank and
+    | fail over between candidate models. `health_window_minutes` is the recent
+    | window over which model-attributable run failures and latency are measured;
+    | `health_min_sample` is the minimum number of recent runs before a provider's
+    | failure rate is trusted (below it a provider is treated as healthy); and
+    | `health_failure_threshold` is the failure rate (0–1) above which a provider
+    | is considered unhealthy and deprioritized in routing.
+    |
+    */
+
+    'routing' => [
+        'health_window_minutes' => (int) env('MAAC_ROUTING_HEALTH_WINDOW', 60),
+        'health_min_sample' => (int) env('MAAC_ROUTING_HEALTH_MIN_SAMPLE', 5),
+        'health_failure_threshold' => (float) env('MAAC_ROUTING_HEALTH_FAILURE_THRESHOLD', 0.5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Enterprise Identity (SSO) (Phase 6G)
+    |--------------------------------------------------------------------------
+    |
+    | Settings for the OAuth 2.0 / OIDC authorization-code login flow. `http_timeout_seconds`
+    | bounds each outbound call to the provider's token and userinfo endpoints.
+    |
+    */
+
+    'sso' => [
+        'http_timeout_seconds' => (int) env('MAAC_SSO_HTTP_TIMEOUT', 10),
     ],
 
 ];

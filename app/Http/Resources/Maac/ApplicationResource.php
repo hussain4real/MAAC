@@ -31,6 +31,7 @@ class ApplicationResource extends JsonResource
             'ownerEmail' => $this->owner_email,
             'env' => $this->environment->label(),
             'status' => $this->status->label(),
+            'runtimeFrozen' => $this->isRuntimeFrozen(),
             'projects' => $this->projects_count,
             'agents' => $this->agents_count,
             'toolsRequired' => $this->tools_required,

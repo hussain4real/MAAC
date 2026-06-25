@@ -17,10 +17,15 @@ import type {
     MaacEvaluationDataset,
     MaacGovernanceSettings,
     MaacConnector,
+    MaacIncident,
     MaacKnowledgeSource,
     MaacOperational,
+    MaacProviderHealth,
     MaacQuota,
+    MaacRoutingPolicy,
     MaacSdkCompatibility,
+    MaacSsoConnection,
+    MaacVaultSecret,
     MaacWebhookEndpoint,
 } from '@/types/global';
 import { MAAC as FIXTURE } from './data';
@@ -107,6 +112,11 @@ export type MaacData = MaacDataset & {
     knowledgeSources: MaacKnowledgeSource[];
     evaluationDatasets: MaacEvaluationDataset[];
     evaluations: MaacEvaluation[];
+    vaultSecrets: MaacVaultSecret[];
+    routingPolicies: MaacRoutingPolicy[];
+    providerHealth: MaacProviderHealth[];
+    incidents: MaacIncident[];
+    ssoConnections: MaacSsoConnection[];
     execModeLabel: typeof FIXTURE.execModeLabel;
     implLabel: typeof FIXTURE.implLabel;
     byId: <T extends { id: string }>(list: T[], id: string) => T | undefined;
@@ -145,6 +155,11 @@ export function useMaacData(): MaacData {
             knowledgeSources: maac?.knowledgeSources ?? [],
             evaluationDatasets: maac?.evaluationDatasets ?? [],
             evaluations: maac?.evaluations ?? [],
+            vaultSecrets: maac?.vaultSecrets ?? [],
+            routingPolicies: maac?.routingPolicies ?? [],
+            providerHealth: maac?.providerHealth ?? [],
+            incidents: maac?.incidents ?? [],
+            ssoConnections: maac?.ssoConnections ?? [],
             execModeLabel: FIXTURE.execModeLabel,
             implLabel: FIXTURE.implLabel,
             byId: <T extends { id: string }>(list: T[], id: string) =>

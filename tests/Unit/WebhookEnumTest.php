@@ -21,8 +21,9 @@ it('labels every webhook event type', function () {
 
     expect(WebhookEventType::RunToolRequested->label())->toBe('Tool requested')
         ->and(WebhookEventType::RunCompleted->label())->toBe('Run completed')
-        ->and(WebhookEventType::values())->toContain('run.completed', 'run.tool_requested')
-        ->and(WebhookEventType::options())->toHaveCount(6);
+        ->and(WebhookEventType::RunRequiresApproval->label())->toBe('Run requires approval')
+        ->and(WebhookEventType::values())->toContain('run.completed', 'run.tool_requested', 'run.requires_approval')
+        ->and(WebhookEventType::options())->toHaveCount(7);
 });
 
 it('describes webhook endpoint statuses', function () {

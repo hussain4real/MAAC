@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\RecordsAuditEvents;
 use App\Enums\LlmStatus;
 use App\Enums\Sensitivity;
+use App\Support\Secrets\Contracts\SecretVault;
 use Database\Factories\LlmProviderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
@@ -29,16 +30,18 @@ use Illuminate\Support\Carbon;
  * @property Sensitivity $sensitivity
  * @property array<int, string> $environments
  * @property LlmStatus $status
+ * @property string|null $vault_secret_id
  * @property int $usage_pct
  * @property int $runs_count
  * @property string|null $note
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Team $team
+ * @property-read VaultSecret|null $vaultSecret
  * @property-read Collection<int, Project> $projects
  * @property-read Collection<int, Agent> $agents
  */
-#[Fillable(['team_id', 'slug', 'name', 'code', 'provider', 'context_window', 'input_cost', 'output_cost', 'sensitivity', 'environments', 'status', 'usage_pct', 'runs_count', 'note'])]
+#[Fillable(['team_id', 'slug', 'name', 'code', 'provider', 'context_window', 'input_cost', 'output_cost', 'sensitivity', 'environments', 'status', 'vault_secret_id', 'usage_pct', 'runs_count', 'note'])]
 class LlmProvider extends Model
 {
     /** @use HasFactory<LlmProviderFactory> */
@@ -72,6 +75,28 @@ class LlmProvider extends Model
     public function agents(): HasMany
     {
         return $this->hasMany(Agent::class);
+    }
+
+    /**
+     * Get the vault secret that holds this model's API key, if one is bound.
+     *
+     * @return BelongsTo<VaultSecret, $this>
+     */
+    public function vaultSecret(): BelongsTo
+    {
+        return $this->belongsTo(VaultSecret::class, 'vault_secret_id');
+    }
+
+    /**
+     * Resolve the provider's API key from the secrets vault when one is bound,
+     * recording the access. Returns null when no vault key is configured, in
+     * which case the runtime falls back to the environment/config-driven key.
+     */
+    public function resolveApiKey(SecretVault $vault): ?string
+    {
+        $secret = $this->vaultSecret;
+
+        return $secret instanceof VaultSecret ? $vault->read($secret) : null;
     }
 
     /**

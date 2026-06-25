@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AgentStatus;
+use App\Enums\AlertSeverity;
 use App\Enums\AppStatus;
 use App\Enums\CredentialStatus;
 use App\Enums\Environment;
@@ -9,6 +10,7 @@ use App\Enums\EvaluationStatus;
 use App\Enums\ExecMode;
 use App\Enums\HttpMethod;
 use App\Enums\ImplStatus;
+use App\Enums\IncidentActionType;
 use App\Enums\KnowledgeSourceStatus;
 use App\Enums\LlmStatus;
 use App\Enums\MaacPermission;
@@ -16,11 +18,15 @@ use App\Enums\MaacRole;
 use App\Enums\McpConnectorStatus;
 use App\Enums\ProjectStatus;
 use App\Enums\RemoteAuthType;
+use App\Enums\RoutingStrategy;
 use App\Enums\RunStatus;
 use App\Enums\Sensitivity;
+use App\Enums\SsoConnectionStatus;
+use App\Enums\SsoProvider;
 use App\Enums\ToolCallStatus;
 use App\Enums\ToolScope;
 use App\Enums\TraceEventType;
+use App\Enums\VaultSecretKind;
 
 test('every MAAC enum case has a non-empty label', function (string $enum) {
     foreach ($enum::cases() as $case) {
@@ -44,6 +50,11 @@ test('every MAAC enum case has a non-empty label', function (string $enum) {
     HttpMethod::class,
     RemoteAuthType::class,
     McpConnectorStatus::class,
+    VaultSecretKind::class,
+    RoutingStrategy::class,
+    IncidentActionType::class,
+    SsoProvider::class,
+    SsoConnectionStatus::class,
 ]);
 
 test('enums expose value/label option pairs', function (string $enum) {
@@ -69,7 +80,29 @@ test('enums expose value/label option pairs', function (string $enum) {
     KnowledgeSourceStatus::class,
     EvaluationStatus::class,
     EvaluationCaseKind::class,
+    VaultSecretKind::class,
+    RoutingStrategy::class,
+    IncidentActionType::class,
+    SsoProvider::class,
+    SsoConnectionStatus::class,
 ]);
+
+test('an sso connection status reports whether it accepts logins', function () {
+    expect(SsoConnectionStatus::Active->isActive())->toBeTrue()
+        ->and(SsoConnectionStatus::Disabled->isActive())->toBeFalse();
+});
+
+test('an incident action type carries a high severity except lifting a freeze', function () {
+    expect(IncidentActionType::FreezeApplication->severity())->toBe(AlertSeverity::High)
+        ->and(IncidentActionType::RevokeCredential->severity())->toBe(AlertSeverity::High)
+        ->and(IncidentActionType::LiftFreeze->severity())->toBe(AlertSeverity::Low);
+});
+
+test('the vault secret kind binds only LLM keys to a model and builds a stable reference', function () {
+    expect(VaultSecretKind::LlmKey->bindsToModel())->toBeTrue()
+        ->and(VaultSecretKind::Webhook->bindsToModel())->toBeFalse()
+        ->and(VaultSecretKind::LlmKey->reference('Anthropic Claude'))->toBe('llm_key:anthropic claude');
+});
 
 test('enum helper predicates behave as expected', function () {
     expect(ExecMode::Client->isClientSide())->toBeTrue()

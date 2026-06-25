@@ -101,6 +101,7 @@ export interface MaacApprovals {
     agents: ApprovalItem[];
     models: ApprovalItem[];
     data: ApprovalItem[];
+    runtime: ApprovalItem[];
 }
 
 /** A published SDK client package (Phase 6C). */
@@ -361,6 +362,103 @@ export interface MaacEvaluation {
     results: MaacEvaluationResult[];
 }
 
+/** Phase 6G — a vault-held secret (never the plaintext). */
+export interface MaacVaultSecret {
+    uuid: string;
+    id: string;
+    name: string;
+    reference: string;
+    kind: string;
+    kindLabel: string;
+    lastFour: string | null;
+    version: number;
+    boundModel: string[];
+    rotatedAt: string | null;
+    lastAccessed: string | null;
+    accessedCount: number;
+    createdBy: string | null;
+    createdAt: string | null;
+}
+
+/** Phase 6G — an advanced model routing policy. */
+export interface MaacRoutingPolicy {
+    uuid: string;
+    id: string;
+    name: string;
+    agentId: string;
+    agentName: string | null;
+    strategy: string;
+    strategyLabel: string;
+    primaryProviderId: string | null;
+    primaryProvider: string | null;
+    fallbackProviderIds: string[];
+    maxCostPer1k: number | null;
+    maxLatencyMs: number | null;
+    enabled: boolean;
+    createdAt: string | null;
+}
+
+/** Phase 6G — a recent-health snapshot for a model provider. */
+export interface MaacProviderHealth {
+    id: string;
+    name: string;
+    code: string;
+    sampleSize: number;
+    failureRate: number;
+    healthy: boolean;
+    avgLatencyMs: number | null;
+}
+
+/** Phase 6G — a break-glass / incident-response action. */
+export interface MaacIncident {
+    id: string;
+    type: string;
+    typeLabel: string;
+    severity: string;
+    actor: string;
+    subject: string | null;
+    subjectType: string | null;
+    reason: string;
+    environment: string | null;
+    reverted: boolean;
+    revertedAt: string | null;
+    time: string;
+    at: string | null;
+    action: string;
+}
+
+/** Phase 6G — an enterprise identity (SSO) connection. */
+export interface MaacSsoConnection {
+    uuid: string;
+    id: string;
+    name: string;
+    provider: string;
+    providerLabel: string;
+    authorizeUrl: string;
+    tokenUrl: string;
+    userinfoUrl: string;
+    clientId: string;
+    secretConfigured: boolean;
+    scopes: string;
+    emailClaim: string;
+    nameClaim: string;
+    groupsClaim: string;
+    defaultTeamRole: string;
+    groupRoleMappings: Array<{
+        group: string;
+        team_role: string;
+        maac_role?: string;
+        project_slug?: string;
+    }>;
+    autoProvision: boolean;
+    status: string;
+    statusLabel: string;
+    redirectUri: string;
+    loginUrl: string;
+    identityCount: number | null;
+    createdAt: string | null;
+}
+
 export interface MaacProp {
     apps: Application[];
     projects: Project[];
@@ -382,6 +480,11 @@ export interface MaacProp {
     knowledgeSources: MaacKnowledgeSource[];
     evaluationDatasets: MaacEvaluationDataset[];
     evaluations: MaacEvaluation[];
+    vaultSecrets: MaacVaultSecret[];
+    routingPolicies: MaacRoutingPolicy[];
+    providerHealth: MaacProviderHealth[];
+    incidents: MaacIncident[];
+    ssoConnections: MaacSsoConnection[];
 }
 
 declare module '@inertiajs/core' {
