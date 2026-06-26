@@ -73,6 +73,29 @@ test('the journey export downloads the timeline as CSV', function () {
         ->and($csv)->toContain('contract_changed');
 });
 
+test('the journey export quotes CSV cells that contain a comma', function () {
+    [$owner, $team] = ownerAndTeam();
+    $this->actingAs($owner);
+
+    $application = Application::factory()->for($team)->create(['environment' => Environment::Production]);
+    $contract = app(CreateToolContract::class)->handle($team, toolContractData([
+        'application_id' => $application->id,
+        'name' => 'Fetch, Records',
+    ]));
+
+    app(ReportToolImplementation::class)->handle($application, Environment::Production, [[
+        'tool' => $contract->slug,
+        'handler_name' => 'RecordsHandler',
+        'version' => '1.0.0',
+        'schema_fingerprint' => $contract->schemaFingerprint(),
+    ]]);
+
+    $csv = $this->get("/{$team->slug}/journey/export?format=csv")->getContent();
+
+    // The tool name contains a comma, so its CSV cell must be wrapped in quotes.
+    expect($csv)->toContain('"Fetch, Records"');
+});
+
 test('the journey export rejects an unknown format', function () {
     [$team] = seedExportJourney();
 
