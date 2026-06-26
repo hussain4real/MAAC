@@ -2,10 +2,15 @@
 
 use App\Enums\Environment;
 use App\Enums\ExecMode;
+use App\Enums\WebhookEventType;
+use App\Jobs\DeliverWebhook;
 use App\Models\Application;
 use App\Models\Credential;
 use App\Models\ToolContract;
 use App\Models\ToolImplementation;
+use App\Models\WebhookDelivery;
+use App\Models\WebhookEndpoint;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Passport;
 
@@ -141,6 +146,59 @@ test('reporting against a disabled contract is rejected', function () {
 test('a malformed report fails validation', function () {
     reportImpl([['handler_name' => 'X']])->assertStatus(422);
     test()->postJson('/api/v1/tool-implementations', [])->assertStatus(422);
+});
+
+test('reporting a handler fires an implementation webhook to a subscribed endpoint', function () {
+    Queue::fake();
+
+    $endpoint = WebhookEndpoint::factory()->for($this->application)->create([
+        'environment' => Environment::Production,
+        'events' => ['*'],
+    ]);
+
+    reportImpl([[
+        'tool' => 'getOperationalRecords',
+        'handler_name' => 'OpsRecordsHandler',
+        'version' => '2.0.0',
+        'schema_fingerprint' => $this->tool->schemaFingerprint(),
+        'language' => 'typescript',
+    ]])->assertOk();
+
+    $delivery = WebhookDelivery::where('webhook_endpoint_id', $endpoint->id)->first();
+
+    expect($delivery)->not->toBeNull()
+        ->and($delivery->event)->toBe(WebhookEventType::ImplementationReported)
+        ->and($delivery->agent_run_id)->toBeNull()
+        ->and($delivery->payload['event'])->toBe('implementation.reported')
+        ->and($delivery->payload['data'])->toMatchArray([
+            'tool' => 'getOperationalRecords',
+            'environment' => 'production',
+            'status' => 'implemented',
+            'implemented_version' => '2.0.0',
+            'contract_version' => '2.0.0',
+            'handler_name' => 'OpsRecordsHandler',
+        ]);
+
+    Queue::assertPushed(DeliverWebhook::class);
+});
+
+test('an endpoint not subscribed to implementation events receives no delivery', function () {
+    Queue::fake();
+
+    WebhookEndpoint::factory()->for($this->application)->create([
+        'environment' => Environment::Production,
+        'events' => ['run.completed'],
+    ]);
+
+    reportImpl([[
+        'tool' => 'getOperationalRecords',
+        'handler_name' => 'OpsRecordsHandler',
+        'version' => '2.0.0',
+        'schema_fingerprint' => $this->tool->schemaFingerprint(),
+    ]])->assertOk();
+
+    expect(WebhookDelivery::where('event', WebhookEventType::ImplementationReported)->count())->toBe(0);
+    Queue::assertNotPushed(DeliverWebhook::class);
 });
 
 test('a repeated report updates the existing implementation record', function () {

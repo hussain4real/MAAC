@@ -8,7 +8,6 @@ import {
     Donut,
     DonutLegend,
     HBars,
-    Progress,
     StatCard,
 } from '@/components/maac/charts';
 import { ScopeBanner } from '@/components/maac/common';
@@ -45,14 +44,6 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
     const D = MAAC.dashboard;
     const gstat = D.stats;
 
-    const runs7d = scope.agents.reduce((s, a) => s + a.runs7d, 0);
-    const runsToday = isAll
-        ? gstat.runsToday
-        : Math.max(1, Math.round(runs7d / 7));
-    const scaleVsAll = runsToday / gstat.runsToday;
-    const waitingScoped = scope.runs.filter(
-        (r) => r.status === 'waiting_for_client',
-    ).length;
     const activeApps = scope.apps.filter((a) => a.status === 'Active').length;
     const suspApps = scope.apps.filter((a) => a.status !== 'Active').length;
     const pubAgents = scope.agents.filter(
@@ -62,6 +53,23 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
         (t) => t.execMode === 'client',
     ).length;
 
+    // The all-applications view uses the team-wide rollups computed server-side
+    // (today's window). A scoped view derives its run stats from the real runs
+    // visible in scope, so the numbers are always genuine, never estimated.
+    const periodLabel = isAll ? 'today' : 'in scope';
+    const runsToday = isAll ? gstat.runsToday : scope.runs.length;
+    const scaleVsAll = gstat.runsToday > 0 ? runsToday / gstat.runsToday : 0;
+    const scopedTokens = scope.runs.reduce(
+        (sum, r) => sum + r.tokensIn + r.tokensOut,
+        0,
+    );
+    const scopedCost = scope.runs.reduce((sum, r) => sum + r.cost, 0);
+    const compact = (n: number): string =>
+        Intl.NumberFormat('en', {
+            notation: 'compact',
+            maximumFractionDigits: 2,
+        }).format(n);
+
     const stat = isAll
         ? gstat
         : {
@@ -70,18 +78,16 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
               agents: scope.agents.length,
               tools: scope.tools.length,
               runsToday,
-              waitingClient: Math.max(
-                  waitingScoped,
-                  scope.tools.some((t) =>
-                      ['required', 'outdated', 'incompatible'].includes(t.impl),
-                  )
-                      ? 1
-                      : 0,
-              ),
-              success: Math.round(runsToday * 0.95),
-              failed: Math.max(0, Math.round(runsToday * 0.025)),
-              tokens: ((runsToday * 3760) / 1e6).toFixed(2) + 'M',
-              cost: 'QAR ' + Math.round(runsToday * 1.5).toLocaleString(),
+              waitingClient: scope.runs.filter(
+                  (r) => r.status === 'waiting_for_client',
+              ).length,
+              success: scope.runs.filter((r) => r.status === 'completed')
+                  .length,
+              failed: scope.runs.filter((r) =>
+                  ['failed', 'expired'].includes(r.status),
+              ).length,
+              tokens: compact(scopedTokens),
+              cost: 'QAR ' + compact(scopedCost),
           };
 
     const runStatus = isAll
@@ -94,23 +100,35 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
               },
               {
                   label: 'Waiting for client',
-                  value: Math.max(1, stat.waitingClient),
+                  value: stat.waitingClient,
                   color: 'var(--orange-600)',
               },
               {
                   label: 'Running',
-                  value: Math.max(1, Math.round(runsToday * 0.012)),
+                  value: scope.runs.filter((r) => r.status === 'running')
+                      .length,
                   color: 'var(--blue-500)',
               },
               {
                   label: 'Failed',
-                  value: Math.max(1, stat.failed),
+                  value: stat.failed,
                   color: 'var(--red-500)',
               },
           ];
     const runsOverTime = isAll
         ? D.runsOverTime
-        : D.runsOverTime.map((v) => Math.max(1, Math.round(v * scaleVsAll)));
+        : D.runsOverTime.map((v) => Math.round(v * scaleVsAll));
+
+    // Run-volume trend: recent 12h vs the prior 12h of the 24-bucket series.
+    const recentVol = runsOverTime.slice(12).reduce((s, v) => s + v, 0);
+    const earlierVol = runsOverTime.slice(0, 12).reduce((s, v) => s + v, 0);
+    const trendPct =
+        earlierVol > 0 ? ((recentVol - earlierVol) / earlierVol) * 100 : null;
+
+    const successRate =
+        stat.runsToday > 0 ? (stat.success / stat.runsToday) * 100 : 0;
+    const failRate =
+        stat.runsToday > 0 ? (stat.failed / stat.runsToday) * 100 : 0;
 
     const recentRuns = (isAll ? MAAC.runs : scope.runs).slice(0, 6);
     const topAgents = [...scope.agents]
@@ -167,9 +185,7 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
             value: stat.projects,
             icon: 'projects',
             tone: 'blue',
-            sub: isAll
-                ? 'Across 5 applications'
-                : `Across ${scope.apps.length} application${scope.apps.length === 1 ? '' : 's'}`,
+            sub: `Across ${stat.apps} application${stat.apps === 1 ? '' : 's'}`,
             screen: 'projects',
         },
         {
@@ -198,7 +214,7 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
         sub?: string;
     }[] = [
         {
-            label: 'Agent Runs Today',
+            label: isAll ? 'Agent Runs Today' : 'Agent Runs',
             value: stat.runsToday.toLocaleString(),
             icon: 'runs',
             tone: 'purple',
@@ -216,14 +232,14 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
             value: stat.success.toLocaleString(),
             icon: 'checkCircle',
             tone: 'teal',
-            sub: '93.3% success rate',
+            sub: `${successRate.toFixed(1)}% success rate`,
         },
         {
             label: 'Failed Runs',
             value: String(stat.failed),
             icon: 'xCircle',
             tone: 'red',
-            sub: "2.4% of today's runs",
+            sub: `${failRate.toFixed(1)}% of runs ${periodLabel}`,
         },
     ];
 
@@ -351,7 +367,16 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
                                     >
                                         {stat.runsToday.toLocaleString()}
                                     </span>
-                                    <Badge tone="teal">▲ 12.4%</Badge>
+                                    {trendPct !== null && (
+                                        <Badge
+                                            tone={
+                                                trendPct >= 0 ? 'teal' : 'red'
+                                            }
+                                        >
+                                            {trendPct >= 0 ? '▲' : '▼'}{' '}
+                                            {Math.abs(trendPct).toFixed(1)}%
+                                        </Badge>
+                                    )}
                                 </div>
                             }
                         />
@@ -441,59 +466,7 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
                                     marginBottom: 12,
                                 }}
                             >
-                                tokens consumed today
-                            </div>
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    gap: 6,
-                                    fontSize: 11.5,
-                                }}
-                            >
-                                <div style={{ flex: 1 }}>
-                                    <div
-                                        style={{
-                                            color: 'var(--text-3)',
-                                            marginBottom: 3,
-                                        }}
-                                    >
-                                        Input
-                                    </div>
-                                    <div
-                                        className="tnum"
-                                        style={{
-                                            fontWeight: 700,
-                                            fontSize: 14,
-                                        }}
-                                    >
-                                        {(
-                                            parseFloat(stat.tokens) * 0.75
-                                        ).toFixed(2)}
-                                        M
-                                    </div>
-                                </div>
-                                <div style={{ flex: 1 }}>
-                                    <div
-                                        style={{
-                                            color: 'var(--text-3)',
-                                            marginBottom: 3,
-                                        }}
-                                    >
-                                        Output
-                                    </div>
-                                    <div
-                                        className="tnum"
-                                        style={{
-                                            fontWeight: 700,
-                                            fontSize: 14,
-                                        }}
-                                    >
-                                        {(
-                                            parseFloat(stat.tokens) * 0.25
-                                        ).toFixed(2)}
-                                        M
-                                    </div>
-                                </div>
+                                tokens consumed {periodLabel}
                             </div>
                         </div>
                     </Card>
@@ -523,21 +496,7 @@ export default function Dashboard({ pendingInvitations = [] }: Props) {
                                     marginBottom: 12,
                                 }}
                             >
-                                today
-                            </div>
-                            <Progress
-                                value={64}
-                                color="var(--primary)"
-                                showVal
-                            />
-                            <div
-                                style={{
-                                    fontSize: 11,
-                                    color: 'var(--text-3)',
-                                    marginTop: 6,
-                                }}
-                            >
-                                64% of {isAll ? 'daily' : 'your'} budget
+                                {periodLabel}
                             </div>
                         </div>
                     </Card>

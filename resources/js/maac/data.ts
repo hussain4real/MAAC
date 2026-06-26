@@ -164,6 +164,35 @@ export type Tool = {
     redaction?: string[];
 };
 
+/**
+ * Resolve a tool's effective implementation status from its real per-environment
+ * SDK reports, falling back to the contract's aggregate `impl` only when nothing
+ * has been reported. The most severe drift wins, so a single outdated or
+ * incompatible handler surfaces. Keeps the Tools views consistent with the SDK
+ * Implementation Center, which reads the same per-application records.
+ */
+export function effectiveImpl(tool: Tool): ImplStatus {
+    const records = tool.implementations ?? [];
+
+    if (records.length === 0) {
+        return tool.impl;
+    }
+
+    if (records.some((record) => record.status === 'incompatible')) {
+        return 'incompatible';
+    }
+
+    if (records.some((record) => record.status === 'outdated')) {
+        return 'outdated';
+    }
+
+    if (records.some((record) => record.status === 'implemented')) {
+        return 'implemented';
+    }
+
+    return tool.impl;
+}
+
 /** Console-safe view of a remote HTTP tool's config (no credential material). */
 export type ToolHttpConfig = {
     method: string;
@@ -209,11 +238,13 @@ export type Run = {
     tokensOut: number;
     cost: number;
     latency: string;
+    latencyMs?: number | null;
     started: string;
     completed: string;
     input: string;
     output?: string | null;
     error?: string;
+    masked?: boolean;
 };
 
 // ---------- LLMs ----------

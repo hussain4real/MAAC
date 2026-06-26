@@ -32,7 +32,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Render exceptions as JSON for the stateless SDK/runtime API, and for
+        // any console request that explicitly asks for JSON (e.g. the playground
+        // runtime driven by Inertia's standalone HTTP client). Inertia page
+        // visits accept HTML, so their validation errors still redirect back.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
     })->create();

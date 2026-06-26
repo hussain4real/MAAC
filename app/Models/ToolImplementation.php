@@ -7,10 +7,12 @@ use App\Enums\ImplStatus;
 use App\Enums\SdkLanguage;
 use Database\Factories\ToolImplementationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -21,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property ImplStatus $status
  * @property string|null $handler_name
  * @property string|null $implemented_version
+ * @property string|null $schema_fingerprint
  * @property SdkLanguage|null $language
  * @property string|null $sdk_version
  * @property Carbon|null $last_validated_at
@@ -28,8 +31,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read ToolContract $toolContract
  * @property-read Application $application
+ * @property-read Collection<int, ToolImplementationEvent> $events
  */
-#[Fillable(['tool_contract_id', 'application_id', 'environment', 'status', 'handler_name', 'implemented_version', 'language', 'sdk_version', 'last_validated_at'])]
+#[Fillable(['tool_contract_id', 'application_id', 'environment', 'status', 'handler_name', 'implemented_version', 'schema_fingerprint', 'language', 'sdk_version', 'last_validated_at'])]
 class ToolImplementation extends Model
 {
     /** @use HasFactory<ToolImplementationFactory> */
@@ -53,6 +57,16 @@ class ToolImplementation extends Model
     public function application(): BelongsTo
     {
         return $this->belongsTo(Application::class);
+    }
+
+    /**
+     * Get the append-only timeline events recorded for this implementation.
+     *
+     * @return HasMany<ToolImplementationEvent, $this>
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(ToolImplementationEvent::class);
     }
 
     /**

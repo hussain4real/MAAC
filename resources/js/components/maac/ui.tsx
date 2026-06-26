@@ -1130,36 +1130,82 @@ export function Avatar({
     );
 }
 
-/* ---------- App mark ---------- */
-export function AppMark({ code, size = 34 }: { code: string; size?: number }) {
-    const colors: Record<string, string> = {
-        MOP: 'var(--purple-600)',
-        FWS: 'var(--teal-500)',
-        PMA: 'var(--orange-600)',
-        CSP: 'var(--blue-500)',
-        VMS: 'var(--navy-700)',
-    };
+/* ---------- Entity mark ---------- */
+export type EntityKind =
+    | 'application'
+    | 'project'
+    | 'agent'
+    | 'tool'
+    | 'connector'
+    | 'knowledge';
 
+const ENTITY_ICON: Record<EntityKind, string> = {
+    application: 'apps',
+    project: 'projects',
+    agent: 'agents',
+    tool: 'tools',
+    connector: 'layers',
+    knowledge: 'book',
+};
+
+const MARK_PALETTE = [
+    'var(--purple-600)',
+    'var(--teal-500)',
+    'var(--blue-500)',
+    'var(--orange-600)',
+    'var(--navy-700)',
+];
+
+function markColor(seed: string): string {
+    let hash = 0;
+
+    for (let i = 0; i < seed.length; i++) {
+        hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    }
+
+    return MARK_PALETTE[hash % MARK_PALETTE.length];
+}
+
+/**
+ * A rounded, color-coded glyph standing in for an entity. The entity TYPE picks
+ * the icon (so applications, projects, agents and tools read distinctly at a
+ * glance) and the seed (id/name) picks a stable color — replacing a raw slug/id,
+ * which looked noisy for custom slugs like "node-test-client".
+ */
+export function EntityMark({
+    kind,
+    seed,
+    size = 34,
+}: {
+    kind: EntityKind;
+    seed: string;
+    size?: number;
+}) {
     return (
         <div
             style={{
                 width: size,
                 height: size,
                 borderRadius: 8,
-                background: colors[code] || 'var(--purple-600)',
+                background: markColor(seed),
                 color: '#fff',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: size * 0.34,
-                fontWeight: 700,
                 flexShrink: 0,
-                fontFamily: 'var(--mono)',
             }}
         >
-            {code}
+            <Icon name={ENTITY_ICON[kind]} size={Math.round(size * 0.5)} />
         </div>
     );
+}
+
+/**
+ * Backwards-compatible application glyph (an {@see EntityMark} of kind
+ * `application`). Existing call sites pass the app slug as `code`.
+ */
+export function AppMark({ code, size = 34 }: { code: string; size?: number }) {
+    return <EntityMark kind="application" seed={code} size={size} />;
 }
 
 /* ---------- Empty state ---------- */

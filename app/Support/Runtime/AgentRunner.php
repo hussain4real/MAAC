@@ -58,6 +58,7 @@ class AgentRunner
         private readonly ModelRouter $modelRouter,
         private readonly RuntimeApprovalPolicy $approvalPolicy,
         private readonly ApprovalManager $approvals,
+        private readonly ModelPricing $pricing,
     ) {}
 
     /**
@@ -863,12 +864,13 @@ class AgentRunner
     }
 
     /**
-     * Accumulate token usage and estimated cost onto the run.
+     * Accumulate token usage and estimated cost onto the run. Cost is an estimate
+     * (token usage × the reviewed per-1M price catalog), since no provider returns
+     * a per-request dollar amount through its API.
      */
     private function recordUsage(AgentRun $run, LlmUsage $usage, LlmProvider $provider): void
     {
-        $cost = ($usage->tokensIn / 1000) * $provider->input_cost
-            + ($usage->tokensOut / 1000) * $provider->output_cost;
+        $cost = $this->pricing->estimate($provider, $usage->tokensIn, $usage->tokensOut);
 
         $run->update([
             'tokens_in' => $run->tokens_in + $usage->tokensIn,

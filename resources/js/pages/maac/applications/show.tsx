@@ -1077,16 +1077,18 @@ const maac = new MAACClient({
 
 // Discover agents available to this application
 const agents = await maac.listAgents();`;
-    const handler = `// Register a local handler for a client-side tool.
+    const handler = `import { ToolHandlerRegistry } from "@maac/sdk";
+
+// Register a local handler, keyed by the tool's contract slug.
 // MAAC defines the contract; this app owns the execution.
-maac.registerTool("getOperationalRecords", async (args, ctx) => {
-  if (!ctx.user.hasPermission("ops:read")) {
-    return { status: "rejected", reason: "Not permitted" };
-  }
-  const data = await db.operations.query({
+const registry = new ToolHandlerRegistry();
+
+registry.register("getOperationalRecords", (args, ctx) => {
+  // Enforce YOUR app's own authorization, then read your own data.
+  const result = yourApp.operations.query({
     from: args.from_date, to: args.to_date, vessel: args.vessel_id,
   });
-  return { summary: data.summary, records: data.records };
+  return { summary: result.summary, records: result.records };
 });`;
     const invoke = `// Invoke an agent — pause/resume is handled automatically
 const res = await maac.runAgent("operations-summary", {

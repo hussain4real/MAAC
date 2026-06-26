@@ -99,6 +99,37 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Model Pricing (cost estimation)
+    |--------------------------------------------------------------------------
+    |
+    | The single reviewed source of truth for model pricing, in US dollars per
+    | 1,000,000 tokens — the unit every provider publishes, so a maintainer copies
+    | the published figure verbatim (no error-prone per-1K conversion). The
+    | runtime ESTIMATES a run's cost as `tokens / 1e6 * rate`; a model with no
+    | catalog entry falls back to the per-1M `input_cost`/`output_cost` stored on
+    | its catalog row (for custom/on-prem models). Cost is always an estimate:
+    | providers return token *usage* via their API, never a per-request dollar
+    | amount, so any dollar figure is usage multiplied by this table. Keep these
+    | current with the provider's published pricing.
+    |
+    | @var array<string, array{input: float, output: float}>
+    |
+    | `max_rate_per_million` is a units-error guardrail (a per-1M rate above it is
+    | almost certainly a per-1K figure entered by mistake); a test asserts every
+    | catalog rate stays under it.
+    |
+    */
+
+    'pricing' => [
+        'models' => [
+            'gpt-5.4' => ['input' => 1.25, 'output' => 10.0],
+        ],
+
+        'max_rate_per_million' => (float) env('MAAC_PRICING_MAX_RATE', 1000.0),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | SDK Distribution, Versioning & Compatibility (Phase 6C)
     |--------------------------------------------------------------------------
     |

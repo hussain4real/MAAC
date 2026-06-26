@@ -19,6 +19,7 @@ import {
     inputStyle,
     scopeBadge,
 } from '@/components/maac/ui';
+import { effectiveImpl } from '@/maac/data';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
@@ -43,7 +44,7 @@ export default function Tools() {
         total: scope.tools.length,
         client: scope.tools.filter((t) => t.execMode === 'client').length,
         needsImpl: scope.tools.filter((t) =>
-            ['required', 'outdated', 'incompatible'].includes(t.impl),
+            ['required', 'outdated', 'incompatible'].includes(effectiveImpl(t)),
         ).length,
         approval: scope.tools.filter((t) => t.approval).length,
     };
@@ -234,7 +235,7 @@ export default function Tools() {
                             </Td>
                             <Td>
                                 {t.execMode === 'client' ? (
-                                    <ImplBadge status={t.impl} />
+                                    <ImplBadge status={effectiveImpl(t)} />
                                 ) : (
                                     <Badge tone="teal" dot>
                                         Ready

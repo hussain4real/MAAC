@@ -280,47 +280,77 @@ export function schemaJson(obj: Record<string, string>): string {
     return `{\n  "type": "object",\n  "properties": {\n${props}\n  },\n  "required": [${required.join(', ')}]\n}`;
 }
 
-/** Generates a client-side tool handler stub in the requested language. */
+/**
+ * Generates a client-side tool handler stub in the requested language, using the
+ * real `@maac/sdk` `ToolHandlerRegistry` API. The handler is keyed by the tool's
+ * contract slug, takes `(args, ctx)`, and returns the tool's output schema shape;
+ * authorization is the app's own concern (MAAC's `ctx` is just `{ run, toolCall }`).
+ */
 export function sdkStub(
-    tool: { id: string; name: string },
+    tool: { id: string },
     lang: 'ts' | 'php' | 'py',
     argList: string[],
+    outList: string[],
 ): string {
-    const fn = tool.name;
+    const perm = `${tool.id.toLowerCase()}:read`;
 
     if (lang === 'php') {
         return `<?php
-$maac->registerTool('${fn}', function (array $args, Context $ctx) {
-    if (! $ctx->user->can('${tool.id.toLowerCase()}:read')) {
-        return ['status' => 'rejected', 'reason' => 'Not permitted'];
-    }
-    $data = AppData::query([
+use Maac\\Sdk\\Tools\\ToolContext;
+use Maac\\Sdk\\Tools\\ToolHandlerRegistry;
+
+// MAAC defines the contract; your app owns the execution (keyed by the tool slug).
+$registry = new ToolHandlerRegistry;
+
+$registry->registerCallable('${tool.id}', function (array $args, ToolContext $ctx): array {
+    // Enforce YOUR app's own authorization (e.g. '${perm}'), then read your own data.
+    $result = YourApp::query([
 ${argList.map((a) => `        '${a}' => $args['${a}'] ?? null,`).join('\n')}
     ]);
-    return ['summary' => $data->summary, 'records' => $data->records];
+
+    // Return a result matching the tool's output schema.
+    return [
+${outList.map((o) => `        '${o}' => $result['${o}'],`).join('\n')}
+    ];
 });`;
     }
 
     if (lang === 'py') {
-        return `@maac.tool("${fn}")
-async def ${tool.id}(args: dict, ctx: Context):
-    if not ctx.user.has_permission("${tool.id.toLowerCase()}:read"):
-        return {"status": "rejected", "reason": "Not permitted"}
-    data = await db.query(
+        const pyFn = tool.id.replace(/[^a-zA-Z0-9_]/g, '_');
+
+        return `from maac_sdk import ToolHandlerRegistry
+
+registry = ToolHandlerRegistry()
+
+
+# MAAC defines the contract; your app owns the execution (keyed by the tool slug).
+@registry.register("${tool.id}")
+def ${pyFn}(args: dict, ctx: dict) -> dict:
+    # Enforce YOUR app's own authorization (e.g. "${perm}"), then read your own data.
+    result = your_app.query(
 ${argList.map((a) => `        ${a}=args.get("${a}"),`).join('\n')}
     )
-    return {"summary": data.summary, "records": data.records}`;
+
+    # Return a result matching the tool's output schema.
+    return {
+${outList.map((o) => `        "${o}": result["${o}"],`).join('\n')}
+    }`;
     }
 
-    return `import { maac } from "./maac-client";
+    return `import { ToolHandlerRegistry } from "@maac/sdk";
 
-maac.registerTool("${fn}", async (args, ctx) => {
-  if (!ctx.user.hasPermission("${tool.id.toLowerCase()}:read")) {
-    return { status: "rejected", reason: "Not permitted" };
-  }
-  const data = await db.query({
+// MAAC defines the contract; your app owns the execution (keyed by the tool slug).
+const registry = new ToolHandlerRegistry();
+
+registry.register("${tool.id}", (args, ctx) => {
+  // Enforce YOUR app's own authorization (e.g. "${perm}"), then read your own data.
+  const result = yourApp.query({
 ${argList.map((a) => `    ${a}: args.${a},`).join('\n')}
   });
-  return { summary: data.summary, records: data.records };
+
+  // Return a result matching the tool's output schema.
+  return {
+${outList.map((o) => `    ${o}: result.${o},`).join('\n')}
+  };
 });`;
 }

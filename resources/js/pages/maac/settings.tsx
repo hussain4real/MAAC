@@ -1,9 +1,11 @@
 /* ============================================================
    MAAC — Settings
+   Members, governance defaults, usage, and environments are read from
+   real backend data (the `members` page prop + the shared `maac` prop);
+   the platform name reflects the current team.
    ============================================================ */
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-import { Progress } from '@/components/maac/charts';
 import {
     Avatar,
     Badge,
@@ -13,94 +15,59 @@ import {
     Input,
     PageHeader,
     SectionHeader,
-    Select,
     Table,
     Tabs,
     Td,
-    Toggle,
     Tr,
 } from '@/components/maac/ui';
 import type { TabDef } from '@/components/maac/ui';
+import type { Environment } from '@/maac/data';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
 
 /* ── Local sub-components ─────────────────────────────────── */
 
-function SettingRow({
-    label,
-    desc,
-    on,
-    border,
-}: {
-    label: string;
-    desc: string;
-    on: boolean;
-    border: boolean;
-}) {
-    const [v, setV] = useState(on);
-
+function UsageStat({ label, value }: { label: string; value: number }) {
     return (
         <div
             style={{
                 display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
-                gap: 14,
-                padding: '13px 0',
-                borderTop: border ? '1px solid var(--border)' : 'none',
+                fontSize: 12.5,
             }}
         >
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
-                <div
-                    style={{
-                        fontSize: 12,
-                        color: 'var(--text-3)',
-                        marginTop: 2,
-                    }}
-                >
-                    {desc}
-                </div>
-            </div>
-            <Toggle on={v} onChange={setV} />
-        </div>
-    );
-}
-
-function UsageBar({
-    label,
-    v,
-    max,
-    suffix,
-}: {
-    label: string;
-    v: number;
-    max: number;
-    suffix?: string;
-}) {
-    return (
-        <div>
-            <div
-                style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: 11.5,
-                    marginBottom: 5,
-                }}
-            >
-                <span style={{ color: 'var(--text-2)' }}>{label}</span>
-                <span className="tnum" style={{ fontWeight: 600 }}>
-                    {v}
-                    {suffix ?? ` / ${max}`}
-                </span>
-            </div>
-            <Progress value={v} max={max} color="var(--primary)" height={6} />
+            <span style={{ color: 'var(--text-2)' }}>{label}</span>
+            <span className="tnum" style={{ fontWeight: 700, fontSize: 14 }}>
+                {value.toLocaleString()}
+            </span>
         </div>
     );
 }
 
 function GeneralSettings() {
     const MAAC = useMaacData();
+    const { currentTeam } = usePage().props;
+    const settings = MAAC.governanceSettings;
+
+    const defaults = [
+        {
+            label: 'Mask sensitive inputs in logs',
+            desc: 'Prompts and tool arguments marked sensitive are masked before logging.',
+            on: settings.maskSensitiveInputs,
+        },
+        {
+            label: 'Mask sensitive tool results in logs',
+            desc: 'Restricted & Confidential tool outputs are masked before logging.',
+            on: settings.maskSensitiveOutputs,
+        },
+        {
+            label: 'Block restricted data from logs',
+            desc: 'Restricted-sensitivity payloads are never written to run logs.',
+            on: settings.blockRestrictedLogging,
+        },
+    ];
 
     return (
         <div
@@ -113,107 +80,87 @@ function GeneralSettings() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <Card>
                     <SectionHeader title="Platform" icon="settings" />
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 16,
-                            maxWidth: 480,
-                        }}
-                    >
-                        <Field label="Platform name">
-                            <Input defaultValue="Milaha AI Agent Center" />
+                    <div style={{ maxWidth: 480 }}>
+                        <Field label="Team name">
+                            <Input value={currentTeam?.name ?? ''} readOnly />
                         </Field>
-                        <div
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr',
-                                gap: 14,
-                            }}
-                        >
-                            <Field label="Default region">
-                                <Select
-                                    value="Qatar — Doha DC"
-                                    onChange={() => {}}
-                                    options={[
-                                        'Qatar — Doha DC',
-                                        'Qatar — Doha DR',
-                                    ]}
-                                />
-                            </Field>
-                            <Field label="Default model">
-                                <Select
-                                    value="GPT-4o"
-                                    onChange={() => {}}
-                                    options={MAAC.llms
-                                        .filter((l) => l.status === 'Approved')
-                                        .map((l) => l.name)}
-                                />
-                            </Field>
-                        </div>
                     </div>
                 </Card>
                 <Card>
-                    <SectionHeader title="Defaults" icon="bolt" />
+                    <SectionHeader
+                        title="Data governance defaults"
+                        icon="shield"
+                    />
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        {[
-                            {
-                                label: 'Require approval before production',
-                                desc: 'Agents & tools need owner approval before Production.',
-                                on: true,
-                            },
-                            {
-                                label: 'Mask sensitive tool results in logs',
-                                desc: 'Restricted & Confidential outputs masked by default.',
-                                on: true,
-                            },
-                            {
-                                label: 'Auto-generate SDK stubs',
-                                desc: 'Generate stubs when a client-side tool is created.',
-                                on: true,
-                            },
-                            {
-                                label: 'Pending tool timeout (60s)',
-                                desc: 'Expire runs that wait too long for a client tool.',
-                                on: true,
-                            },
-                        ].map((s, i) => (
-                            <SettingRow key={i} {...s} border={i > 0} />
+                        {defaults.map((s, i) => (
+                            <div
+                                key={s.label}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 14,
+                                    padding: '13px 0',
+                                    borderTop: i
+                                        ? '1px solid var(--border)'
+                                        : 'none',
+                                }}
+                            >
+                                <div style={{ flex: 1 }}>
+                                    <div
+                                        style={{
+                                            fontSize: 13,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        {s.label}
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: 12,
+                                            color: 'var(--text-3)',
+                                            marginTop: 2,
+                                        }}
+                                    >
+                                        {s.desc}
+                                    </div>
+                                </div>
+                                <Badge tone={s.on ? 'teal' : 'neutral'} dot>
+                                    {s.on ? 'On' : 'Off'}
+                                </Badge>
+                            </div>
                         ))}
+                    </div>
+                    <div
+                        style={{
+                            marginTop: 12,
+                            fontSize: 11.5,
+                            color: 'var(--text-3)',
+                        }}
+                    >
+                        Configured on the Governance page.
                     </div>
                 </Card>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <Card>
-                    <SectionHeader title="Plan" icon="sparkles" />
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>
-                        Enterprise — Internal
-                    </div>
+                    <SectionHeader title="Usage" icon="sparkles" />
                     <div
                         style={{
-                            fontSize: 12,
-                            color: 'var(--text-3)',
-                            marginTop: 2,
-                        }}
-                    >
-                        Unlimited applications & agents
-                    </div>
-                    <div
-                        style={{
-                            marginTop: 13,
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: 9,
+                            gap: 10,
                         }}
                     >
-                        <UsageBar label="Applications" v={5} max={50} />
-                        <UsageBar label="Agents" v={8} max={100} />
-                        <UsageBar
-                            label="Daily token budget"
-                            v={64}
-                            max={100}
-                            suffix="%"
+                        <UsageStat
+                            label="Applications"
+                            value={MAAC.apps.length}
                         />
+                        <UsageStat label="Agents" value={MAAC.agents.length} />
+                        <UsageStat
+                            label="Projects"
+                            value={MAAC.projects.length}
+                        />
+                        <UsageStat label="Tools" value={MAAC.tools.length} />
                     </div>
                 </Card>
                 <Card>
@@ -238,76 +185,20 @@ function GeneralSettings() {
     );
 }
 
-type Member = { name: string; email: string; role: string; apps: string };
+type Member = { name: string; email: string; role: string };
 
-function MembersSettings() {
-    const members: Member[] = [
-        {
-            name: 'Reema Saleh',
-            email: 'r.saleh@milaha.com',
-            role: 'Agent Developer',
-            apps: 'MOP, FWS',
-        },
-        {
-            name: 'Khalid Al-Mansoori',
-            email: 'k.almansoori@milaha.com',
-            role: 'Application Owner',
-            apps: 'MOP',
-        },
-        {
-            name: 'Aisha Rahman',
-            email: 'a.rahman@milaha.com',
-            role: 'Project Owner',
-            apps: 'FWS',
-        },
-        {
-            name: 'Sami Diab',
-            email: 's.diab@milaha.com',
-            role: 'Security Reviewer',
-            apps: 'All',
-        },
-        {
-            name: 'Yousef Haddad',
-            email: 'y.haddad@milaha.com',
-            role: 'Agent Developer',
-            apps: 'PMA',
-        },
-        {
-            name: 'Omar Sheikh',
-            email: 'o.sheikh@milaha.com',
-            role: 'Business Viewer',
-            apps: 'VMS',
-        },
-    ];
-
+function MembersSettings({ members }: { members: Member[] }) {
     return (
         <Card pad={false}>
-            <div
-                style={{
-                    padding: '14px 16px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                }}
-            >
+            <div style={{ padding: '14px 16px 12px' }}>
                 <SectionHeader
                     title="Members"
-                    sub={`${members.length} people with platform access`}
+                    sub={`${members.length} ${members.length === 1 ? 'person' : 'people'} with access to this team`}
                     icon="user"
                     style={{ marginBottom: 0 }}
                 />
-                <Btn variant="primary" size="sm" icon="plus">
-                    Invite member
-                </Btn>
             </div>
-            <Table
-                columns={[
-                    { label: 'Member' },
-                    { label: 'Role' },
-                    { label: 'Applications' },
-                    { label: '', align: 'right' },
-                ]}
-            >
+            <Table columns={[{ label: 'Member' }, { label: 'Role' }]}>
                 {members.map((m) => (
                     <Tr key={m.email}>
                         <Td strong>
@@ -345,22 +236,6 @@ function MembersSettings() {
                                 {m.role}
                             </Badge>
                         </Td>
-                        <Td mono>{m.apps}</Td>
-                        <Td align="right">
-                            <button
-                                className="maac-iconbtn"
-                                style={{
-                                    border: 'none',
-                                    background: 'none',
-                                    cursor: 'pointer',
-                                    color: 'var(--text-3)',
-                                    padding: 5,
-                                    borderRadius: 6,
-                                }}
-                            >
-                                <Icon name="dots" size={16} />
-                            </button>
-                        </Td>
                     </Tr>
                 ))}
             </Table>
@@ -368,34 +243,29 @@ function MembersSettings() {
     );
 }
 
-type EnvEntry = {
-    name: string;
-    desc: string;
-    apps: number;
-    color: string;
-    icon: string;
-};
-
 function EnvSettings() {
-    const envs: EnvEntry[] = [
+    const MAAC = useMaacData();
+    const envMeta: {
+        name: Environment;
+        desc: string;
+        color: string;
+        icon: string;
+    }[] = [
         {
             name: 'Production',
             desc: 'Live agents serving applications.',
-            apps: 4,
             color: 'var(--purple-600)',
             icon: 'power',
         },
         {
             name: 'Staging',
             desc: 'Pre-production validation environment.',
-            apps: 3,
             color: 'var(--blue-500)',
             icon: 'layers',
         },
         {
             name: 'Development',
             desc: 'Developer sandbox for building agents.',
-            apps: 5,
             color: 'var(--text-3)',
             icon: 'flask',
         },
@@ -409,71 +279,71 @@ function EnvSettings() {
                 gap: 14,
             }}
         >
-            {envs.map((e) => (
-                <Card
-                    key={e.name}
-                    style={{ borderTop: `3px solid ${e.color}` }}
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            marginBottom: 10,
-                        }}
+            {envMeta.map((e) => {
+                const count = MAAC.apps.filter((a) => a.env === e.name).length;
+
+                return (
+                    <Card
+                        key={e.name}
+                        style={{ borderTop: `3px solid ${e.color}` }}
                     >
-                        <span
+                        <div
                             style={{
-                                width: 34,
-                                height: 34,
-                                borderRadius: 9,
-                                background: 'var(--surface-3)',
-                                color: e.color,
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center',
+                                gap: 10,
+                                marginBottom: 10,
                             }}
                         >
-                            <Icon name={e.icon} size={17} />
-                        </span>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>
-                            {e.name}
-                        </div>
-                    </div>
-                    <div
-                        style={{
-                            fontSize: 12.5,
-                            color: 'var(--text-2)',
-                            lineHeight: 1.5,
-                            marginBottom: 12,
-                        }}
-                    >
-                        {e.desc}
-                    </div>
-                    <div
-                        style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            paddingTop: 11,
-                            borderTop: '1px solid var(--border)',
-                        }}
-                    >
-                        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                            <b
-                                className="tnum"
-                                style={{ color: 'var(--text)' }}
+                            <span
+                                style={{
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 9,
+                                    background: 'var(--surface-3)',
+                                    color: e.color,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                }}
                             >
-                                {e.apps}
-                            </b>{' '}
-                            applications
-                        </span>
-                        <Badge tone="teal" dot>
-                            Healthy
-                        </Badge>
-                    </div>
-                </Card>
-            ))}
+                                <Icon name={e.icon} size={17} />
+                            </span>
+                            <div style={{ fontSize: 14, fontWeight: 700 }}>
+                                {e.name}
+                            </div>
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 12.5,
+                                color: 'var(--text-2)',
+                                lineHeight: 1.5,
+                                marginBottom: 12,
+                            }}
+                        >
+                            {e.desc}
+                        </div>
+                        <div
+                            style={{
+                                paddingTop: 11,
+                                borderTop: '1px solid var(--border)',
+                            }}
+                        >
+                            <span
+                                style={{ fontSize: 12, color: 'var(--text-3)' }}
+                            >
+                                <b
+                                    className="tnum"
+                                    style={{ color: 'var(--text)' }}
+                                >
+                                    {count}
+                                </b>{' '}
+                                {count === 1 ? 'application' : 'applications'}
+                            </span>
+                        </div>
+                    </Card>
+                );
+            })}
         </div>
     );
 }
@@ -619,7 +489,7 @@ function AppearanceSettings({
 
 /* ── Page ─────────────────────────────────────────────────── */
 
-export default function Settings() {
+export default function Settings({ members }: { members: Member[] }) {
     const { theme, setTheme, scope } = useMaacNav();
     const allTabs: (TabDef & { roles: string[] })[] = [
         {
@@ -659,7 +529,7 @@ export default function Settings() {
                     tabs={<Tabs tabs={tabs} active={tab} onChange={setTab} />}
                 />
                 {tab === 'general' && <GeneralSettings />}
-                {tab === 'members' && <MembersSettings />}
+                {tab === 'members' && <MembersSettings members={members} />}
                 {tab === 'environments' && <EnvSettings />}
                 {tab === 'appearance' && (
                     <AppearanceSettings theme={theme} setTheme={setTheme} />

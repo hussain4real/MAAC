@@ -1,8 +1,15 @@
 /* ============================================================
-   MAAC — Agent Playground (client-side tool execution)
+   MAAC — Agent Playground (real runtime)
+   Runs a published agent against the live runtime (the same
+   AgentRunner the SDK uses) via a console-authenticated endpoint.
+   Response, trace, tokens, and latency are from the real run; cost is
+   an estimate (token usage × the per-1M model price catalog, since
+   providers return usage not cost). When the model calls a client-side
+   tool, MAAC pauses and the console submits the result to resume.
    ============================================================ */
+import type { FormDataConvertible } from '@inertiajs/core';
 import { Head } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Lbl } from '@/components/maac/common';
 import {
     AgentBadge,
@@ -17,429 +24,126 @@ import {
     PageHeader,
     SectionHeader,
     Select,
-    SensBadge,
     Textarea,
 } from '@/components/maac/ui';
-import type { Agent, Application, Tool } from '@/maac/data';
+import { usePlaygroundRun } from '@/hooks/use-playground-run';
+import type {
+    PlaygroundRunResult,
+    PlaygroundToolCall,
+    PlaygroundTraceEntry,
+} from '@/hooks/use-playground-run';
 import { Icon } from '@/maac/icons';
+import type { IconName } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
 
-/* ── module consts ── */
+/* ── trace presentation ── */
 
-const PLAY_STEPS = [
-    { id: 'start', label: 'Run started', icon: 'play' },
-    { id: 'init', label: 'Agent initialized', icon: 'agents' },
-    { id: 'llm', label: 'LLM selected', icon: 'llm' },
-    { id: 'prompt', label: 'Prompt processed', icon: 'doc' },
-    { id: 'toolreq', label: 'Tool required', icon: 'tools' },
-    {
-        id: 'waiting',
-        label: 'Waiting for client-side execution',
-        icon: 'clock',
-    },
-    { id: 'result', label: 'Tool result received', icon: 'download' },
-    { id: 'resume', label: 'Agent resumed', icon: 'refresh' },
-    { id: 'final', label: 'Final response generated', icon: 'sparkles' },
-    { id: 'done', label: 'Run completed', icon: 'check2' },
-];
-
-interface ScenarioArgs {
-    from_date?: string;
-    to_date?: string;
-    status?: string;
-    queue?: string;
-    assignee_id?: string;
-    limit?: number;
-    channel?: string;
-}
-
-interface ScenarioResult {
-    summary?: Record<string, string | number>;
-    records?: Record<string, string | number | null>[];
-    items?: Record<string, string | number | boolean>[];
-    total?: number;
-    requests?: Record<string, string | number>[];
-    interactions?: Record<string, string | number>[];
-}
-
-interface Scenario {
-    args: ScenarioArgs;
-    reason: string;
-    result: ScenarioResult;
-    final: string;
-}
-
-const SCENARIOS: Record<string, Scenario> = {
-    getOperationalRecords: {
-        args: {
-            from_date: '2026-06-08',
-            to_date: '2026-06-08',
-            status: 'active',
-        },
-        reason: "To summarize today's operations, the agent needs the current operational voyage records. This data lives in the Marine Operations Portal database — MAAC cannot access it directly, so it requests the application to run the tool.",
-        result: {
-            summary: {
-                total_vessels: 12,
-                delayed_over_6h: 2,
-                avg_berth_utilization: '84%',
-            },
-            records: [
-                {
-                    vessel: 'MV Al-Zubarah',
-                    port: 'Hamad',
-                    status: 'delayed',
-                    delay: '7h10m',
-                    reason: 'berth congestion',
-                },
-                {
-                    vessel: 'MV Doha Pearl',
-                    port: 'Doha',
-                    status: 'delayed',
-                    delay: '6h40m',
-                    reason: 'customs hold',
-                },
-                {
-                    vessel: 'MV Umm Salal',
-                    port: 'Hamad',
-                    status: 'on_time',
-                    delay: '0',
-                    reason: null,
-                },
-            ],
-        },
-        final: '12 vessels are active across Hamad and Doha ports. 2 voyages exceed the 6-hour delay threshold: MV Al-Zubarah (berth congestion, +7h10m) and MV Doha Pearl (customs hold, +6h40m). Berth utilization at Hamad is 84%. Recommended action: reallocate Berth 7 to MV Al-Zubarah to recover schedule.',
-    },
-    getPendingApprovals: {
-        args: { queue: 'finance-approvals', assignee_id: 'u_8821', limit: 25 },
-        reason: "The agent needs the user's pending approval items to review them. These are held in the Finance Workflow System — the application executes the lookup against its own data and the caller's permissions.",
-        result: {
-            items: [
-                {
-                    id: 'AP-4821',
-                    type: 'Invoice',
-                    amount: 'QAR 42,500',
-                    vendor: 'Gulf Marine Supplies',
-                    policy_ok: true,
-                },
-                {
-                    id: 'AP-4830',
-                    type: 'Payment Run',
-                    amount: 'QAR 188,000',
-                    vendor: 'Doha Logistics Co',
-                    policy_ok: false,
-                },
-            ],
-            total: 2,
-        },
-        final: 'You have 2 pending approvals. AP-4821 (QAR 42,500, Gulf Marine Supplies) is within policy — recommend Approve. AP-4830 (QAR 188,000) exceeds the QAR 150,000 single-approval threshold — recommend Escalate to the Finance Controller. A notification was sent to the workflow owner.',
-    },
-    getProcurementRequests: {
-        args: {
-            from_date: '2026-01-01',
-            to_date: '2026-03-31',
-            status: 'delivered',
-        },
-        reason: "To analyze supplier delivery performance, the agent requests last quarter's procurement records. The Procurement Management App owns this data and runs the query locally.",
-        result: {
-            summary: {
-                total_requests: 430,
-                late_deliveries: 38,
-                worst_supplier: 'Bayside Traders',
-            },
-            requests: [
-                { supplier: 'Bayside Traders', on_time_rate: '71%', late: 14 },
-                {
-                    supplier: 'Gulf Marine Supplies',
-                    on_time_rate: '96%',
-                    late: 3,
-                },
-            ],
-        },
-        final: 'Across 430 procurement requests last quarter, 38 deliveries were late (8.8%). Bayside Traders had the weakest on-time rate at 71% (14 late deliveries) and is the top contributor to delays. Gulf Marine Supplies performed best at 96%. Recommend a supplier review meeting with Bayside Traders.',
-    },
-    getCustomerInteractions: {
-        args: {
-            from_date: '2026-06-01',
-            to_date: '2026-06-08',
-            channel: 'all',
-        },
-        reason: "The agent needs this week's customer interactions to surface emerging themes. The Customer Service Portal returns anonymized records from its own database.",
-        result: {
-            summary: {
-                total: 1840,
-                top_theme: 'shipment delays',
-                sentiment: '-0.18 vs last week',
-            },
-            interactions: [
-                { theme: 'Shipment delays', count: 312, sentiment: 'negative' },
-                {
-                    theme: 'Billing questions',
-                    count: 154,
-                    sentiment: 'neutral',
-                },
-            ],
-        },
-        final: 'From 1,840 interactions this week, the top emerging theme is shipment delays (312 mentions, mostly negative). Sentiment dropped 0.18 vs last week, driven by port congestion complaints. Billing questions (154) are stable. Recommend a proactive status notification for delayed shipments.',
-    },
+const TRACE_ICONS: Record<string, IconName> = {
+    run_requested: 'play',
+    caller_authenticated: 'user',
+    model_selected: 'llm',
+    model_failover: 'refresh',
+    prompt_prepared: 'doc',
+    tool_required: 'tools',
+    tool_result_received: 'download',
+    validated: 'check2',
+    resumed: 'refresh',
+    requires_approval: 'clock',
+    approval_granted: 'checkCircle',
+    approval_denied: 'xCircle',
+    completed: 'checkCircle',
+    failed: 'xCircle',
 };
 
-const DEFAULT_SCENARIO = SCENARIOS.getOperationalRecords;
+function traceTone(type: string): { color: string; bg: string } {
+    if (
+        type === 'completed' ||
+        type === 'validated' ||
+        type === 'approval_granted'
+    ) {
+        return { color: 'var(--teal-600)', bg: 'var(--teal-100)' };
+    }
+
+    if (type === 'failed' || type === 'approval_denied') {
+        return { color: 'var(--red-500)', bg: 'var(--red-100)' };
+    }
+
+    if (
+        type === 'tool_required' ||
+        type === 'requires_approval' ||
+        type === 'model_failover'
+    ) {
+        return { color: 'var(--orange-600)', bg: 'var(--orange-100)' };
+    }
+
+    return { color: 'var(--blue-500)', bg: 'var(--blue-100)' };
+}
+
+const DEFAULT_MESSAGES: Record<string, string> = {
+    ag_ops_summary:
+        "Summarize today's vessel operations and flag any delays over 6 hours.",
+    ag_approval_review:
+        'Review my pending approvals and recommend an action for each.',
+    ag_procure_insight:
+        'Which suppliers had the most delayed deliveries last quarter?',
+    ag_customer_trend: 'What are the top emerging complaint themes this week?',
+};
+
+const FALLBACK_MESSAGE =
+    'Summarize the latest activity and flag anything that needs attention.';
+
+/* ── client-side tool result helpers ── */
+
+/**
+ * Build a schema-shaped sample result for a client-side tool so the console
+ * user can edit a realistic payload before submitting it back to the runtime.
+ */
+function sampleResult(
+    schema: Record<string, string> | null,
+): Record<string, FormDataConvertible> {
+    const out: Record<string, FormDataConvertible> = {};
+
+    if (!schema) {
+        return out;
+    }
+
+    for (const [field, definition] of Object.entries(schema)) {
+        const base = definition.replace('?', '').trim();
+        out[field] =
+            base === 'number' || base === 'integer'
+                ? 0
+                : base === 'boolean'
+                  ? true
+                  : base === 'array'
+                    ? []
+                    : base === 'object'
+                      ? {}
+                      : 'sample value';
+    }
+
+    return out;
+}
 
 /* ── local sub-components ── */
 
-type Phase = 'idle' | 'pre' | 'waiting' | 'post' | 'done';
-
-interface ToolExecPanelProps {
-    tool: Tool;
-    scenario: Scenario;
-    phase: Phase;
-    showResult: boolean;
-    onSimulate: () => void;
-    app: Application | undefined;
+interface TraceTimelineProps {
+    trace: PlaygroundTraceEntry[];
 }
 
-function ToolExecPanel({
-    tool,
-    scenario,
-    phase,
-    showResult,
-    onSimulate,
-    app,
-}: ToolExecPanelProps) {
-    const waiting = phase === 'waiting';
-
-    return (
-        <Card
-            pad={false}
-            style={{
-                overflow: 'hidden',
-                borderColor: waiting ? 'var(--orange-400)' : 'var(--teal-300)',
-                borderWidth: 1.5,
-                animation: 'fadeUp .35s ease both',
-            }}
-        >
-            <div
-                style={{
-                    padding: '13px 16px',
-                    background: waiting
-                        ? 'linear-gradient(100deg, var(--orange-100), transparent)'
-                        : 'linear-gradient(100deg, var(--teal-100), transparent)',
-                    borderBottom: '1px solid var(--border)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 11,
-                }}
-            >
-                <span
-                    style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 9,
-                        background: waiting
-                            ? 'var(--orange-600)'
-                            : 'var(--teal-600)',
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        animation: waiting ? 'pulseDot 1.8s infinite' : 'none',
-                    }}
-                >
-                    <Icon name="link" size={19} />
-                </span>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700 }}>
-                        Client-Side Tool Execution{' '}
-                        {waiting ? 'Required' : 'Completed'}
-                    </div>
-                    <div
-                        style={{
-                            fontSize: 12,
-                            color: 'var(--text-2)',
-                            marginTop: 1,
-                        }}
-                    >
-                        MAAC paused the run and{' '}
-                        {waiting ? 'is waiting for' : 'received a result from'}{' '}
-                        <b>{app?.name}</b>
-                    </div>
-                </div>
-                <Badge tone={waiting ? 'orange' : 'teal'} dot>
-                    {waiting ? 'Waiting for Application' : 'Result received'}
-                </Badge>
-            </div>
-
-            <div style={{ padding: '15px 16px' }}>
-                <div
-                    style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: 14,
-                        marginBottom: 14,
-                    }}
-                >
-                    <div>
-                        <Lbl>Tool</Lbl>
-                        <div
-                            className="mono"
-                            style={{ fontSize: 13, fontWeight: 600 }}
-                        >
-                            {tool.name}
-                        </div>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-                            <ExecChip mode="client" />
-                            <SensBadge level={tool.sensitivity} />
-                        </div>
-                    </div>
-                    <div>
-                        <Lbl>Why the agent needs this</Lbl>
-                        <div
-                            style={{
-                                fontSize: 11.5,
-                                color: 'var(--text-2)',
-                                lineHeight: 1.5,
-                            }}
-                        >
-                            {scenario.reason}
-                        </div>
-                    </div>
-                </div>
-
-                <Lbl>Tool arguments (from agent)</Lbl>
-                <CodeBlock
-                    code={JSON.stringify(scenario.args, null, 2)}
-                    lang="json"
-                    copyable={false}
-                    style={{ marginBottom: waiting || showResult ? 14 : 0 }}
-                />
-
-                {waiting && (
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 12,
-                            padding: '13px 15px',
-                            background: 'var(--orange-100)',
-                            borderRadius: 'var(--r-md)',
-                            border: '1px solid var(--orange-400)',
-                        }}
-                    >
-                        <div
-                            style={{
-                                flex: 1,
-                                fontSize: 12,
-                                color: 'var(--text-2)',
-                                lineHeight: 1.5,
-                            }}
-                        >
-                            MAAC returned this tool request to the application's
-                            SDK. In production, the application would run its
-                            local handler against its own database.{' '}
-                            <b>Simulate that execution below.</b>
-                        </div>
-                        <Btn
-                            variant="primary"
-                            icon="play"
-                            onClick={onSimulate}
-                            style={{ flexShrink: 0 }}
-                        >
-                            Simulate Client Tool Execution
-                        </Btn>
-                    </div>
-                )}
-
-                {showResult && (
-                    <div style={{ animation: 'fadeUp .4s ease both' }}>
-                        <Lbl style={{ marginTop: 2 }}>
-                            Tool result (returned by application SDK)
-                        </Lbl>
-                        <CodeBlock
-                            code={JSON.stringify(scenario.result, null, 2)}
-                            lang="json"
-                            maxHeight={220}
-                        />
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 9,
-                                marginTop: 11,
-                                fontSize: 12,
-                                color: 'var(--teal-600)',
-                                fontWeight: 600,
-                            }}
-                        >
-                            <Icon name="check2" size={16} /> Result validated
-                            against output schema · MAAC resumed the run
-                        </div>
-                    </div>
-                )}
-            </div>
-        </Card>
-    );
-}
-
-interface PlaygroundTimelineProps {
-    visible: number;
-    phase: Phase;
-    agent: Agent;
-    tool: Tool | undefined;
-}
-
-function PlaygroundTimeline({
-    visible,
-    phase,
-    agent,
-    tool,
-}: PlaygroundTimelineProps) {
-    const MAAC = useMaacData();
-
+function TraceTimeline({ trace }: TraceTimelineProps) {
     return (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {PLAY_STEPS.map((s, i) => {
-                const shown = i < visible;
-                const isActive =
-                    i === visible - 1 && (phase === 'pre' || phase === 'post');
-                const isWaiting = s.id === 'waiting' && phase === 'waiting';
-                const detail: Record<string, string | undefined> = {
-                    start: 'Run accepted',
-                    init: `${agent.name} ${agent.version}`,
-                    llm: MAAC.llmById(agent.llm)?.name,
-                    prompt: 'System prompt + user message tokenized',
-                    toolreq: tool ? tool.name : '—',
-                    waiting:
-                        'MAAC returned a tool request to the application SDK',
-                    result: 'Validated against output schema',
-                    resume: 'Run resumed with tool result',
-                    final: 'Response composed',
-                    done: 'Latency 4.2s · $0.0162',
-                };
-                const color = isWaiting
-                    ? 'var(--orange-600)'
-                    : isActive
-                      ? 'var(--blue-500)'
-                      : shown
-                        ? 'var(--teal-600)'
-                        : 'var(--text-3)';
-                const bg = isWaiting
-                    ? 'var(--orange-100)'
-                    : isActive
-                      ? 'var(--blue-100)'
-                      : shown
-                        ? 'var(--teal-100)'
-                        : 'var(--surface-3)';
+            {trace.map((event, i) => {
+                const tone = traceTone(event.type);
 
                 return (
                     <div
-                        key={s.id}
+                        key={event.id}
                         style={{
                             display: 'flex',
                             gap: 13,
-                            opacity: shown ? 1 : 0.4,
-                            transition: 'opacity .3s',
+                            animation: 'fadeUp .3s ease both',
                         }}
                     >
                         <div
@@ -454,55 +158,33 @@ function PlaygroundTimeline({
                                     width: 30,
                                     height: 30,
                                     borderRadius: 999,
-                                    background: bg,
-                                    color,
+                                    background: tone.bg,
+                                    color: tone.color,
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     flexShrink: 0,
-                                    border:
-                                        isWaiting || isActive
-                                            ? `2px solid ${color}`
-                                            : 'none',
-                                    animation:
-                                        isWaiting || isActive
-                                            ? 'pulseDot 1.5s infinite'
-                                            : 'none',
-                                    transition: 'all .3s',
                                 }}
                             >
-                                {shown ? (
-                                    <Icon name={s.icon} size={15} />
-                                ) : (
-                                    <span
-                                        style={{
-                                            fontSize: 11,
-                                            fontWeight: 700,
-                                        }}
-                                    >
-                                        {i + 1}
-                                    </span>
-                                )}
+                                <Icon
+                                    name={TRACE_ICONS[event.type] ?? 'runs'}
+                                    size={15}
+                                />
                             </span>
-                            {i < PLAY_STEPS.length - 1 && (
+                            {i < trace.length - 1 && (
                                 <span
                                     style={{
                                         flex: 1,
                                         width: 2,
-                                        background:
-                                            shown && i < visible - 1
-                                                ? 'var(--teal-300)'
-                                                : 'var(--border)',
-                                        minHeight: 16,
-                                        transition: 'background .3s',
+                                        background: 'var(--border)',
+                                        minHeight: 14,
                                     }}
                                 />
                             )}
                         </div>
                         <div
                             style={{
-                                paddingBottom:
-                                    i < PLAY_STEPS.length - 1 ? 14 : 0,
+                                paddingBottom: i < trace.length - 1 ? 13 : 0,
                                 flex: 1,
                                 minWidth: 0,
                             }}
@@ -515,42 +197,212 @@ function PlaygroundTimeline({
                                 }}
                             >
                                 <span
-                                    style={{
-                                        fontSize: 12.5,
-                                        fontWeight: 600,
-                                        color: shown
-                                            ? 'var(--text)'
-                                            : 'var(--text-3)',
-                                    }}
+                                    style={{ fontSize: 12.5, fontWeight: 600 }}
                                 >
-                                    {i + 1}. {s.label}
+                                    {event.label}
                                 </span>
-                                {isWaiting && (
-                                    <Badge tone="orange" dot>
-                                        paused
-                                    </Badge>
-                                )}
-                                {s.id === 'toolreq' && shown && (
-                                    <Badge tone="orange" soft>
-                                        client-side
-                                    </Badge>
+                                {event.occurredAt && (
+                                    <span
+                                        className="mono"
+                                        style={{
+                                            fontSize: 10.5,
+                                            color: 'var(--text-3)',
+                                        }}
+                                    >
+                                        {event.occurredAt}
+                                    </span>
                                 )}
                             </div>
-                            {shown && (
-                                <div
-                                    style={{
-                                        fontSize: 11.5,
-                                        color: 'var(--text-3)',
-                                        marginTop: 2,
-                                    }}
-                                >
-                                    {detail[s.id]}
-                                </div>
-                            )}
+                            <div
+                                style={{
+                                    fontSize: 11.5,
+                                    color: 'var(--text-3)',
+                                    marginTop: 2,
+                                }}
+                            >
+                                {event.message}
+                            </div>
                         </div>
                     </div>
                 );
             })}
+        </div>
+    );
+}
+
+interface ClientToolPanelProps {
+    toolCall: PlaygroundToolCall;
+    onSubmit: (result: Record<string, FormDataConvertible>) => void;
+    processing: boolean;
+}
+
+/**
+ * Mounted with `key={toolCall.id}` so its editable result is initialized fresh
+ * (from the tool's output schema) for each new client-side tool call.
+ */
+function ClientToolPanel({
+    toolCall,
+    onSubmit,
+    processing,
+}: ClientToolPanelProps) {
+    const [value, setValue] = useState(() =>
+        JSON.stringify(sampleResult(toolCall.output_schema), null, 2),
+    );
+    const [parseError, setParseError] = useState<string | null>(null);
+
+    const submit = () => {
+        let parsed: Record<string, FormDataConvertible>;
+
+        try {
+            parsed = JSON.parse(value) as Record<string, FormDataConvertible>;
+        } catch {
+            setParseError('The tool result must be valid JSON.');
+
+            return;
+        }
+
+        setParseError(null);
+        onSubmit(parsed);
+    };
+
+    return (
+        <Card
+            pad={false}
+            style={{
+                overflow: 'hidden',
+                borderColor: 'var(--orange-400)',
+                borderWidth: 1.5,
+                animation: 'fadeUp .35s ease both',
+            }}
+        >
+            <div
+                style={{
+                    padding: '13px 16px',
+                    background:
+                        'linear-gradient(100deg, var(--orange-100), transparent)',
+                    borderBottom: '1px solid var(--border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 11,
+                }}
+            >
+                <span
+                    style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 9,
+                        background: 'var(--orange-600)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        animation: 'pulseDot 1.8s infinite',
+                    }}
+                >
+                    <Icon name="link" size={19} />
+                </span>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700 }}>
+                        Client-Side Tool Execution Required
+                    </div>
+                    <div
+                        style={{
+                            fontSize: 12,
+                            color: 'var(--text-2)',
+                            marginTop: 1,
+                        }}
+                    >
+                        MAAC paused the run. The model requested{' '}
+                        <b className="mono">{toolCall.tool}</b> — return its
+                        result to resume.
+                    </div>
+                </div>
+                <Badge tone="orange" dot>
+                    Waiting for result
+                </Badge>
+            </div>
+
+            <div style={{ padding: '15px 16px' }}>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                    <ExecChip mode="client" />
+                </div>
+
+                <Lbl>Tool arguments (from the model)</Lbl>
+                <CodeBlock
+                    code={JSON.stringify(toolCall.arguments, null, 2)}
+                    lang="json"
+                    copyable={false}
+                    style={{ marginBottom: 14 }}
+                />
+
+                <Lbl>Tool result (the application would compute this)</Lbl>
+                <Textarea
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    rows={6}
+                    style={{
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: 12,
+                    }}
+                />
+                {parseError && (
+                    <div
+                        style={{
+                            fontSize: 11.5,
+                            color: 'var(--red-500)',
+                            marginTop: 6,
+                        }}
+                    >
+                        {parseError}
+                    </div>
+                )}
+
+                <Btn
+                    variant="primary"
+                    icon="send"
+                    onClick={submit}
+                    disabled={processing}
+                    style={{ marginTop: 12 }}
+                >
+                    {processing ? 'Submitting…' : 'Submit tool result & resume'}
+                </Btn>
+            </div>
+        </Card>
+    );
+}
+
+interface RunStatsProps {
+    run: PlaygroundRunResult;
+}
+
+function RunStats({ run }: RunStatsProps) {
+    return (
+        <div
+            style={{
+                display: 'flex',
+                gap: 14,
+                marginTop: 8,
+                fontSize: 11,
+                color: 'var(--text-3)',
+                flexWrap: 'wrap',
+            }}
+        >
+            <span className="mono">
+                ⬆ {run.usage.tokens_in} in · ⬇ {run.usage.tokens_out} out
+            </span>
+            <span
+                className="mono"
+                title="Estimated: token usage × the model's per-1M price catalog. Providers return usage, not cost, via their API."
+            >
+                ~${run.cost.toFixed(4)} est.
+            </span>
+            {run.latency_ms !== null && (
+                <span className="mono">
+                    ⏱ {(run.latency_ms / 1000).toFixed(2)}s
+                </span>
+            )}
+            <span className="mono">{run.model}</span>
         </div>
     );
 }
@@ -560,6 +412,9 @@ function PlaygroundTimeline({
 export default function Playground() {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
+    const { run, error, processing, start, submitToolResult, reset } =
+        usePlaygroundRun();
+
     const agentParam = new URLSearchParams(
         typeof window !== 'undefined' ? window.location.search : '',
     ).get('agent');
@@ -570,48 +425,20 @@ export default function Playground() {
         MAAC.agentById(reqAgent ?? '') ||
         inScopeAgents.find((a) => a.id === 'ag_ops_summary') ||
         inScopeAgents[0];
+
     const [appId, setAppId] = useState(ag0.appId);
     const [projectId, setProjectId] = useState(ag0.projectId);
     const [agentId, setAgentId] = useState(ag0.id);
     const agent = MAAC.agentById(agentId)!;
-    const clientTool = agent.tools
-        .map((t) => MAAC.toolById(t))
-        .find((t) => t?.execMode === 'client');
-    const scenario =
-        (clientTool && SCENARIOS[clientTool.id]) || DEFAULT_SCENARIO;
-
-    const defaultMsgs: Record<string, string> = {
-        ag_ops_summary:
-            "Summarize today's vessel operations and flag any delays over 6 hours.",
-        ag_approval_review:
-            'Review my pending approvals and recommend an action for each.',
-        ag_procure_insight:
-            'Which suppliers had the most delayed deliveries last quarter?',
-        ag_customer_trend:
-            'What are the top emerging complaint themes this week?',
-    };
 
     const [msg, setMsg] = useState(
-        defaultMsgs[agentId] ||
-            'Summarize the latest activity and flag anything that needs attention.',
+        DEFAULT_MESSAGES[agentId] || FALLBACK_MESSAGE,
     );
-    const [phase, setPhase] = useState<Phase>('idle');
-    const [visible, setVisible] = useState(0);
-    const [showResult, setShowResult] = useState(false);
-    const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-    const clearTimers = () => {
-        timers.current.forEach(clearTimeout);
-        timers.current = [];
-    };
-    useEffect(() => () => clearTimers(), []);
+    const toolCall =
+        run?.status === 'waiting_for_client' ? (run.tool_call ?? null) : null;
 
-    const reset = () => {
-        clearTimers();
-        setPhase('idle');
-        setVisible(0);
-        setShowResult(false);
-    };
+    const isPublished = agent.status === 'Published';
 
     const onAgentChange = (id: string) => {
         const a = MAAC.agentById(id);
@@ -622,54 +449,20 @@ export default function Playground() {
             setProjectId(a.projectId);
         }
 
-        setMsg(
-            defaultMsgs[id] ||
-                'Summarize the latest activity and flag anything that needs attention.',
-        );
+        setMsg(DEFAULT_MESSAGES[id] || FALLBACK_MESSAGE);
         reset();
     };
 
-    const run = () => {
-        clearTimers();
-        setShowResult(false);
-        setPhase('pre');
-        setVisible(1);
-        // reveal steps 1..6 (indices 0..5), pausing at "waiting" (index 5)
-        [2, 3, 4, 5, 6].forEach((n, i) => {
-            timers.current.push(
-                setTimeout(
-                    () => {
-                        setVisible(n);
-
-                        if (n === 6) {
-                            setPhase('waiting');
-                        }
-                    },
-                    650 * (i + 1),
-                ),
-            );
-        });
+    const onRun = () => {
+        if (isPublished && msg.trim() !== '') {
+            void start(agent.id, msg);
+        }
     };
 
-    const simulate = () => {
-        setShowResult(true);
-        setPhase('post');
-        // reveal steps 7..10 (indices 6..9)
-        [7, 8, 9, 10].forEach((n, i) => {
-            timers.current.push(
-                setTimeout(
-                    () => {
-                        setVisible(n);
-
-                        if (n === 10) {
-                            setPhase('done');
-                        }
-                    },
-                    700 * (i + 1),
-                ),
-            );
-        });
-    };
+    const examples = useMemo(
+        () => Object.values(DEFAULT_MESSAGES).slice(0, 3),
+        [],
+    );
 
     return (
         <>
@@ -677,10 +470,10 @@ export default function Playground() {
             <div className="route-anim">
                 <PageHeader
                     title="Agent Playground"
-                    sub="Test an agent end-to-end and watch the client-side tool execution pause-and-resume flow in real time."
+                    sub="Run a published agent against the live runtime and watch the real model, tool, and trace flow — including the client-side tool pause-and-resume."
                     actions={
                         <>
-                            {phase !== 'idle' && (
+                            {run && (
                                 <Btn
                                     variant="default"
                                     icon="refresh"
@@ -781,16 +574,32 @@ export default function Playground() {
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: 9,
+                                    flexWrap: 'wrap',
                                 }}
                             >
                                 <Badge tone="purple" soft icon="llm">
-                                    {MAAC.llmById(agent.llm)?.name}
+                                    {MAAC.llmById(agent.llm)?.name ?? agent.llm}
                                 </Badge>
                                 <Badge tone="neutral">
                                     {agent.tools.length} tools
                                 </Badge>
                                 <AgentBadge status={agent.status} />
                             </div>
+                            {!isPublished && (
+                                <div
+                                    style={{
+                                        marginTop: 10,
+                                        fontSize: 11.5,
+                                        color: 'var(--orange-600)',
+                                        display: 'flex',
+                                        gap: 7,
+                                        alignItems: 'center',
+                                    }}
+                                >
+                                    <Icon name="alert" size={14} /> Publish this
+                                    agent to run it from the console.
+                                </div>
+                            )}
                         </Card>
 
                         <Card>
@@ -800,29 +609,25 @@ export default function Playground() {
                                 onChange={(e) => setMsg(e.target.value)}
                                 rows={4}
                                 placeholder="Enter a message to send to the agent…"
-                                disabled={phase !== 'idle' && phase !== 'done'}
+                                disabled={processing}
                             />
                             <Btn
                                 variant="primary"
                                 full
-                                icon={
-                                    phase === 'pre' || phase === 'post'
-                                        ? 'refresh'
-                                        : 'play'
-                                }
+                                icon={processing ? 'refresh' : 'play'}
                                 style={{ marginTop: 12 }}
                                 disabled={
-                                    phase === 'pre' ||
-                                    phase === 'post' ||
-                                    phase === 'waiting'
+                                    processing ||
+                                    !isPublished ||
+                                    msg.trim() === ''
                                 }
-                                onClick={run}
+                                onClick={onRun}
                             >
-                                {phase === 'idle'
-                                    ? 'Run Agent'
-                                    : phase === 'done'
+                                {processing
+                                    ? 'Running…'
+                                    : run
                                       ? 'Run Again'
-                                      : 'Running…'}
+                                      : 'Run Agent'}
                             </Btn>
                             <div style={{ marginTop: 12 }}>
                                 <div
@@ -842,36 +647,29 @@ export default function Playground() {
                                         gap: 6,
                                     }}
                                 >
-                                    {Object.values(defaultMsgs)
-                                        .slice(0, 3)
-                                        .map((m, i) => (
-                                            <button
-                                                key={i}
-                                                onClick={() => {
-                                                    if (
-                                                        phase === 'idle' ||
-                                                        phase === 'done'
-                                                    ) {
-                                                        setMsg(m);
-                                                        reset();
-                                                    }
-                                                }}
-                                                className="maac-row"
-                                                style={{
-                                                    textAlign: 'left',
-                                                    border: '1px solid var(--border)',
-                                                    background:
-                                                        'var(--surface)',
-                                                    borderRadius: 7,
-                                                    padding: '7px 10px',
-                                                    fontSize: 11.5,
-                                                    color: 'var(--text-2)',
-                                                    cursor: 'pointer',
-                                                }}
-                                            >
-                                                {m}
-                                            </button>
-                                        ))}
+                                    {examples.map((m, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => {
+                                                if (!processing) {
+                                                    setMsg(m);
+                                                }
+                                            }}
+                                            className="maac-row"
+                                            style={{
+                                                textAlign: 'left',
+                                                border: '1px solid var(--border)',
+                                                background: 'var(--surface)',
+                                                borderRadius: 7,
+                                                padding: '7px 10px',
+                                                fontSize: 11.5,
+                                                color: 'var(--text-2)',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            {m}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                         </Card>
@@ -886,17 +684,20 @@ export default function Playground() {
                             minWidth: 0,
                         }}
                     >
-                        {phase === 'idle' ? (
+                        {!run && !processing ? (
                             <Card style={{ minHeight: 480 }}>
                                 <EmptyState
                                     icon="playground"
                                     title="Ready to run"
-                                    desc="Configure an agent and press Run. You'll watch MAAC pause for a client-side tool, then simulate the application returning the result."
+                                    desc="Configure a published agent and press Run. The console invokes the live runtime — the response, trace, and tokens are from the real run; cost is estimated from token usage × the model price catalog."
                                     action={
                                         <Btn
                                             variant="primary"
                                             icon="play"
-                                            onClick={run}
+                                            onClick={onRun}
+                                            disabled={
+                                                !isPublished || processing
+                                            }
                                         >
                                             Run Agent
                                         </Btn>
@@ -914,7 +715,7 @@ export default function Playground() {
                                             marginBottom: 14,
                                         }}
                                     >
-                                        <Avatar name="Reema Saleh" size={32} />
+                                        <Avatar name="You" size={32} />
                                         <div style={{ flex: 1 }}>
                                             <div
                                                 style={{
@@ -941,7 +742,35 @@ export default function Playground() {
                                             </div>
                                         </div>
                                     </div>
-                                    {phase === 'done' && (
+
+                                    {processing && (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 10,
+                                                fontSize: 12.5,
+                                                color: 'var(--text-2)',
+                                                padding: '4px 2px',
+                                            }}
+                                        >
+                                            <span
+                                                style={{
+                                                    width: 22,
+                                                    height: 22,
+                                                    borderRadius: 999,
+                                                    border: '2px solid var(--border)',
+                                                    borderTopColor:
+                                                        'var(--primary)',
+                                                    animation:
+                                                        'spin 0.7s linear infinite',
+                                                }}
+                                            />
+                                            Invoking the runtime…
+                                        </div>
+                                    )}
+
+                                    {run?.status === 'completed' && (
                                         <div
                                             style={{
                                                 display: 'flex',
@@ -966,7 +795,9 @@ export default function Playground() {
                                             >
                                                 <Icon name="agents" size={17} />
                                             </span>
-                                            <div style={{ flex: 1 }}>
+                                            <div
+                                                style={{ flex: 1, minWidth: 0 }}
+                                            >
                                                 <div
                                                     style={{
                                                         fontSize: 12,
@@ -992,91 +823,138 @@ export default function Playground() {
                                                         borderRadius:
                                                             '0 10px 10px 10px',
                                                         border: '1px solid var(--primary-soft-2)',
+                                                        whiteSpace: 'pre-wrap',
                                                     }}
                                                 >
-                                                    {scenario.final}
+                                                    {run.response}
                                                 </div>
+                                                <RunStats run={run} />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {run &&
+                                        (run.status === 'failed' ||
+                                            run.status === 'expired' ||
+                                            run.status === 'cancelled') && (
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    gap: 10,
+                                                    padding: '12px 14px',
+                                                    background:
+                                                        'var(--red-100)',
+                                                    border: '1px solid var(--red-200, var(--red-100))',
+                                                    borderRadius: 'var(--r-md)',
+                                                    animation:
+                                                        'fadeUp .4s ease both',
+                                                }}
+                                            >
+                                                <Icon
+                                                    name="xCircle"
+                                                    size={18}
+                                                />
                                                 <div
                                                     style={{
-                                                        display: 'flex',
-                                                        gap: 14,
-                                                        marginTop: 8,
-                                                        fontSize: 11,
-                                                        color: 'var(--text-3)',
+                                                        flex: 1,
+                                                        minWidth: 0,
                                                     }}
                                                 >
-                                                    <span className="mono">
-                                                        ⚡ {agent.tools.length}{' '}
-                                                        tool calls
-                                                    </span>
-                                                    <span className="mono">
-                                                        ⏱ 4.2s
-                                                    </span>
-                                                    <span className="mono">
-                                                        $0.0162
-                                                    </span>
+                                                    <div
+                                                        style={{
+                                                            fontSize: 12.5,
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        Run {run.status}
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            fontSize: 12,
+                                                            color: 'var(--text-2)',
+                                                            marginTop: 3,
+                                                            whiteSpace:
+                                                                'pre-wrap',
+                                                        }}
+                                                    >
+                                                        {run.error}
+                                                    </div>
+                                                    <RunStats run={run} />
                                                 </div>
                                             </div>
+                                        )}
+
+                                    {error && (
+                                        <div
+                                            style={{
+                                                fontSize: 12,
+                                                color: 'var(--red-500)',
+                                                marginTop: 10,
+                                            }}
+                                        >
+                                            {error}
                                         </div>
                                     )}
                                 </Card>
 
-                                {/* client tool execution panel */}
-                                {(phase === 'waiting' ||
-                                    phase === 'post' ||
-                                    phase === 'done') &&
-                                    clientTool && (
-                                        <ToolExecPanel
-                                            tool={clientTool}
-                                            scenario={scenario}
-                                            phase={phase}
-                                            showResult={showResult}
-                                            onSimulate={simulate}
-                                            app={MAAC.appById(appId)}
-                                        />
-                                    )}
+                                {/* client tool pause/resume */}
+                                {run && toolCall && (
+                                    <ClientToolPanel
+                                        key={toolCall.id}
+                                        toolCall={toolCall}
+                                        processing={processing}
+                                        onSubmit={(parsed) =>
+                                            void submitToolResult(
+                                                run.run_id,
+                                                toolCall.id,
+                                                parsed,
+                                            )
+                                        }
+                                    />
+                                )}
 
-                                {/* timeline */}
-                                <Card pad={false}>
-                                    <div
-                                        style={{
-                                            padding: '13px 16px 4px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                        }}
-                                    >
-                                        <SectionHeader
-                                            title="Execution timeline"
-                                            icon="runs"
-                                            style={{ marginBottom: 0 }}
-                                        />
-                                        <Badge
-                                            tone={
-                                                phase === 'done'
-                                                    ? 'teal'
-                                                    : phase === 'waiting'
-                                                      ? 'orange'
-                                                      : 'blue'
-                                            }
-                                            dot
+                                {/* trace */}
+                                {run && run.trace.length > 0 && (
+                                    <Card pad={false}>
+                                        <div
+                                            style={{
+                                                padding: '13px 16px 4px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                            }}
                                         >
-                                            {phase === 'waiting'
-                                                ? 'Paused — waiting for client'
-                                                : phase === 'done'
-                                                  ? 'Completed'
-                                                  : 'Running'}
-                                        </Badge>
-                                    </div>
-                                    <div style={{ padding: '14px 16px 16px' }}>
-                                        <PlaygroundTimeline
-                                            visible={visible}
-                                            phase={phase}
-                                            agent={agent}
-                                            tool={clientTool}
-                                        />
-                                    </div>
-                                </Card>
+                                            <SectionHeader
+                                                title="Execution trace"
+                                                icon="runs"
+                                                style={{ marginBottom: 0 }}
+                                            />
+                                            <Badge
+                                                tone={
+                                                    run.status === 'completed'
+                                                        ? 'teal'
+                                                        : run.status ===
+                                                            'waiting_for_client'
+                                                          ? 'orange'
+                                                          : run.status ===
+                                                              'failed'
+                                                            ? 'red'
+                                                            : 'blue'
+                                                }
+                                                dot
+                                            >
+                                                {run.status}
+                                            </Badge>
+                                        </div>
+                                        <div
+                                            style={{
+                                                padding: '14px 16px 16px',
+                                            }}
+                                        >
+                                            <TraceTimeline trace={run.trace} />
+                                        </div>
+                                    </Card>
+                                )}
                             </>
                         )}
                     </div>

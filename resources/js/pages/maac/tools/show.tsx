@@ -9,7 +9,9 @@ import {
     PlaceholderScreen,
     Timeline,
     schemaJson,
+    sdkStub,
 } from '@/components/maac/common';
+import type { TimelineItem } from '@/components/maac/common';
 import { ToolFormModal } from '@/components/maac/tool-form';
 import {
     AgentBadge,
@@ -17,6 +19,7 @@ import {
     Btn,
     Card,
     CodeBlock,
+    EmptyState,
     EnvBadge,
     ExecChip,
     ImplBadge,
@@ -31,13 +34,132 @@ import {
     Badge,
     scopeBadge,
 } from '@/components/maac/ui';
-import type { Agent, Tool } from '@/maac/data';
+import type { Agent, ImplStatus, Tool } from '@/maac/data';
 import { useCurrentTeam } from '@/maac/forms';
 import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
 
-export default function Show({ id }: { id: string }) {
+type HistoryVersion = {
+    sequence: number;
+    version: string;
+    created_at: string | null;
+    changed_by: string | null;
+};
+
+type HistoryEvent = {
+    id: string;
+    application: string;
+    status: string;
+    previous_status: string | null;
+    created_at: string | null;
+    actor: string | null;
+};
+
+type ToolHistory = {
+    versions: HistoryVersion[];
+    events: HistoryEvent[];
+} | null;
+
+function fmtAudit(value: string | null): string {
+    if (!value) {
+        return '—';
+    }
+
+    return new Date(value).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    });
+}
+
+function eventLook(event: HistoryEvent): {
+    icon: string;
+    color: string;
+    title: string;
+} {
+    if (event.status === 'incompatible') {
+        return {
+            icon: 'alert',
+            color: 'var(--red-600)',
+            title: `Implementation incompatible — ${event.application}`,
+        };
+    }
+
+    if (event.status === 'outdated') {
+        return {
+            icon: 'alert',
+            color: 'var(--amber-500)',
+            title: `Implementation flagged outdated — ${event.application}`,
+        };
+    }
+
+    if (
+        event.previous_status === 'outdated' ||
+        event.previous_status === 'incompatible'
+    ) {
+        return {
+            icon: 'refresh',
+            color: 'var(--teal-600)',
+            title: `Implementation recovered — ${event.application}`,
+        };
+    }
+
+    return {
+        icon: 'check2',
+        color: 'var(--teal-600)',
+        title: `Implementation validated — ${event.application}`,
+    };
+}
+
+/**
+ * Build the tool's real audit timeline (newest first) from its contract version
+ * snapshots and SDK implementation transitions — replacing the former hardcoded
+ * mock entries.
+ */
+function buildAuditTimeline(history: ToolHistory): TimelineItem[] {
+    if (!history) {
+        return [];
+    }
+
+    const dated = [
+        ...history.versions.map((version) => ({
+            icon: version.sequence === 1 ? 'plus' : 'edit',
+            color:
+                version.sequence === 1 ? 'var(--primary)' : 'var(--blue-500)',
+            title:
+                version.sequence === 1
+                    ? `Tool contract created — v${version.version}`
+                    : `Contract updated — v${version.version}`,
+            by: version.changed_by ?? 'system',
+            time: fmtAudit(version.created_at),
+            ts: version.created_at ? Date.parse(version.created_at) : 0,
+        })),
+        ...history.events.map((event) => ({
+            ...eventLook(event),
+            by: event.actor ?? 'sdk.sync',
+            time: fmtAudit(event.created_at),
+            ts: event.created_at ? Date.parse(event.created_at) : 0,
+        })),
+    ];
+
+    return dated
+        .sort((a, b) => b.ts - a.ts)
+        .map((item) => ({
+            icon: item.icon,
+            color: item.color,
+            title: item.title,
+            by: item.by,
+            time: item.time,
+        }));
+}
+
+export default function Show({
+    id,
+    history,
+}: {
+    id: string;
+    history: ToolHistory;
+}) {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
     const team = useCurrentTeam();
@@ -56,6 +178,45 @@ export default function Show({ id }: { id: string }) {
     const usedByAgents = tool.usedBy
         .map((a) => MAAC.agentById(a))
         .filter((a): a is Agent => Boolean(a));
+
+    const auditItems = buildAuditTimeline(history);
+    const owningApp = MAAC.appById(tool.appId ?? '');
+
+    // Per-application/environment implementation rows. Client tools show their
+    // real reported handlers (the same records the SDK Implementation Center
+    // reads); a client tool with nothing reported yet shows a single "requires
+    // implementation" row; server-side tools are hosted by MAAC.
+    const implRows: {
+        appId: string | null;
+        appName: string;
+        env: string;
+        status: ImplStatus | null;
+        lastValidated: string;
+    }[] = isClient
+        ? (tool.implementations ?? []).length > 0
+            ? (tool.implementations ?? []).map((record) => ({
+                  appId: owningApp?.id ?? null,
+                  appName: owningApp?.name ?? tool.owner,
+                  env: record.env,
+                  status: record.status,
+                  lastValidated: record.lastValidated ?? 'Never',
+              }))
+            : [
+                  {
+                      appId: owningApp?.id ?? null,
+                      appName: owningApp?.name ?? tool.owner,
+                      env: 'Production',
+                      status: 'required' as ImplStatus,
+                      lastValidated: 'Never',
+                  },
+              ]
+        : MAAC.apps.slice(0, 2).map((app) => ({
+              appId: app.id,
+              appName: app.name,
+              env: app.env,
+              status: null,
+              lastValidated: '—',
+          }));
 
     const deprecate = () => {
         if (
@@ -264,16 +425,16 @@ export default function Show({ id }: { id: string }) {
                                     { label: 'Last validated', align: 'right' },
                                 ]}
                             >
-                                {(isClient
-                                    ? [MAAC.appById(tool.appId ?? '')].filter(
-                                          Boolean,
-                                      )
-                                    : MAAC.apps.slice(0, 2)
-                                ).map((app) => (
+                                {implRows.map((row, i) => (
                                     <Tr
-                                        key={app!.id}
-                                        onClick={() =>
-                                            go('application', { id: app!.id })
+                                        key={`${row.appId ?? 'app'}-${row.env}-${i}`}
+                                        onClick={
+                                            row.appId
+                                                ? () =>
+                                                      go('application', {
+                                                          id: row.appId!,
+                                                      })
+                                                : undefined
                                         }
                                     >
                                         <Td strong>
@@ -285,18 +446,22 @@ export default function Show({ id }: { id: string }) {
                                                 }}
                                             >
                                                 <AppMark
-                                                    code={app!.id}
+                                                    code={
+                                                        row.appId ?? tool.owner
+                                                    }
                                                     size={26}
                                                 />
-                                                {app!.name}
+                                                {row.appName}
                                             </div>
                                         </Td>
                                         <Td>
-                                            <EnvBadge env={app!.env} />
+                                            <EnvBadge env={row.env} />
                                         </Td>
                                         <Td>
-                                            {isClient ? (
-                                                <ImplBadge status={tool.impl} />
+                                            {row.status ? (
+                                                <ImplBadge
+                                                    status={row.status}
+                                                />
                                             ) : (
                                                 <Badge tone="teal" dot>
                                                     Hosted by MAAC
@@ -307,11 +472,7 @@ export default function Show({ id }: { id: string }) {
                                             align="right"
                                             style={{ color: 'var(--text-3)' }}
                                         >
-                                            {tool.impl === 'implemented'
-                                                ? '2 hours ago'
-                                                : tool.impl === 'outdated'
-                                                  ? '8 days ago'
-                                                  : 'Never'}
+                                            {row.lastValidated}
                                         </Td>
                                     </Tr>
                                 ))}
@@ -319,61 +480,20 @@ export default function Show({ id }: { id: string }) {
                         </Card>
 
                         <Card>
-                            <SectionHeader title="Audit history" icon="runs" />
-                            <Timeline
-                                items={[
-                                    {
-                                        icon: 'plus',
-                                        color: 'var(--primary)',
-                                        title: 'Tool contract created',
-                                        by:
-                                            tool.owner === 'Platform'
-                                                ? 'platform.admin'
-                                                : 'developer',
-                                        time: '3 weeks ago',
-                                    },
-                                    {
-                                        icon: 'edit',
-                                        color: 'var(--blue-500)',
-                                        title: `Input schema updated to ${tool.scope === 'Agent' ? 'v2' : 'v1'}`,
-                                        by: 'r.saleh',
-                                        time: '8 days ago',
-                                    },
-                                    ...(tool.impl === 'implemented'
-                                        ? [
-                                              {
-                                                  icon: 'check2',
-                                                  color: 'var(--teal-600)',
-                                                  title: 'Implementation validated successfully',
-                                                  by: 'sdk.sync',
-                                                  time: '2 hours ago',
-                                              },
-                                          ]
-                                        : []),
-                                    ...(tool.impl === 'outdated'
-                                        ? [
-                                              {
-                                                  icon: 'alert',
-                                                  color: 'var(--amber-500)',
-                                                  title: 'Implementation flagged outdated — schema drift',
-                                                  by: 'sdk.sync',
-                                                  time: '8 days ago',
-                                              },
-                                          ]
-                                        : []),
-                                    ...(tool.approval
-                                        ? [
-                                              {
-                                                  icon: 'shield',
-                                                  color: 'var(--purple-600)',
-                                                  title: 'Approved for production use',
-                                                  by: 'k.almansoori',
-                                                  time: '5 days ago',
-                                              },
-                                          ]
-                                        : []),
-                                ]}
+                            <SectionHeader
+                                title="Audit history"
+                                sub="Contract version snapshots and SDK implementation transitions, newest first."
+                                icon="runs"
                             />
+                            {auditItems.length === 0 ? (
+                                <EmptyState
+                                    icon="runs"
+                                    title="No recorded history yet"
+                                    desc="Version changes and SDK implementation reports for this tool will appear here as they happen."
+                                />
+                            ) : (
+                                <Timeline items={auditItems} />
+                            )}
                         </Card>
                     </div>
 
@@ -514,60 +634,12 @@ export default function Show({ id }: { id: string }) {
 
 function SDKStubs({ tool }: { tool: Tool }) {
     const [lang, setLang] = useState<'ts' | 'php' | 'py'>('ts');
-    const fn = tool.name;
     const argList = Object.keys(tool.input);
+    const outList = Object.keys(tool.output);
     const stubs: Record<'ts' | 'php' | 'py', string> = {
-        ts: `import { maac } from "./maac-client";
-
-// MAAC defines the contract; your app owns the execution.
-maac.registerTool("${fn}", async (args, ctx) => {
-  // 1. Enforce the caller's permissions
-  if (!ctx.user.hasPermission("${tool.id.replace(/^get/, '').toLowerCase()}:read")) {
-    return { status: "rejected", reason: "Not permitted" };
-  }
-
-  // 2. Query YOUR application's own data
-  const data = await db.query({
-${argList.map((a) => `    ${a}: args.${a},`).join('\n')}
-  });
-
-  // 3. Return a result matching the output schema
-  return { summary: data.summary, records: data.records };
-});`,
-        php: `<?php
-use Milaha\\MAAC\\Client;
-
-// MAAC defines the contract; your app owns the execution.
-$maac->registerTool('${fn}', function (array $args, Context $ctx) {
-    // 1. Enforce the caller's permissions
-    if (! $ctx->user->can('${tool.id.replace(/^get/, '').toLowerCase()}:read')) {
-        return ['status' => 'rejected', 'reason' => 'Not permitted'];
-    }
-
-    // 2. Query YOUR application's own data
-    $data = AppData::query([
-${argList.map((a) => `        '${a}' => $args['${a}'] ?? null,`).join('\n')}
-    ]);
-
-    // 3. Return a result matching the output schema
-    return ['summary' => $data->summary, 'records' => $data->records];
-});`,
-        py: `from maac import maac, Context
-
-# MAAC defines the contract; your app owns the execution.
-@maac.tool("${fn}")
-async def ${tool.id}(args: dict, ctx: Context):
-    # 1. Enforce the caller's permissions
-    if not ctx.user.has_permission("${tool.id.replace(/^get/, '').toLowerCase()}:read"):
-        return {"status": "rejected", "reason": "Not permitted"}
-
-    # 2. Query YOUR application's own data
-    data = await db.query(
-${argList.map((a) => `        ${a}=args.get("${a}"),`).join('\n')}
-    )
-
-    # 3. Return a result matching the output schema
-    return {"summary": data.summary, "records": data.records}`,
+        ts: sdkStub(tool, 'ts', argList, outList),
+        php: sdkStub(tool, 'php', argList, outList),
+        py: sdkStub(tool, 'py', argList, outList),
     };
 
     return (

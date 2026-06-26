@@ -1,35 +1,81 @@
 /* ============================================================
    MAAC — Run Trace (single run detail + execution timeline)
+   The execution timeline renders the run's REAL observability trace
+   (TraceEvent records, ordered by sequence) passed as the `trace` page
+   prop — it mirrors the live-trace rendering used by the Agent Playground.
    ============================================================ */
 import { Head } from '@inertiajs/react';
-import type { CSSProperties } from 'react';
 import { NoAccess } from '@/components/maac/common';
 import {
     Badge,
     Btn,
     Card,
+    EmptyState,
     KV,
     PageHeader,
     RunBadge,
     SectionHeader,
 } from '@/components/maac/ui';
-import type { Agent, Llm, Run } from '@/maac/data';
 import { Icon } from '@/maac/icons';
+import type { IconName } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
-import type { MaacData } from '@/maac/use-data';
 
-/* ---------- local types ---------- */
+/* ---------- trace presentation (mirrors the playground's real-trace timeline) ---------- */
 
-type TraceState = 'done' | 'active' | 'fail' | 'pending';
+/**
+ * One ordered trace event recorded during the run, as serialized by
+ * {@see \App\Http\Resources\Maac\TraceEventResource}.
+ */
+interface TraceEntry {
+    id: string;
+    type: string;
+    label: string;
+    message: string | null;
+    data: Record<string, unknown> | null;
+    sequence: number;
+    occurredAt: string | null;
+}
 
-interface TraceEvent {
-    t: string;
-    title: string;
-    desc: string;
-    icon: string;
-    state: TraceState;
-    tool?: boolean;
+const TRACE_ICONS: Record<string, IconName> = {
+    run_requested: 'play',
+    caller_authenticated: 'user',
+    model_selected: 'llm',
+    model_failover: 'refresh',
+    prompt_prepared: 'doc',
+    tool_required: 'tools',
+    tool_result_received: 'download',
+    validated: 'check2',
+    resumed: 'refresh',
+    requires_approval: 'clock',
+    approval_granted: 'checkCircle',
+    approval_denied: 'xCircle',
+    completed: 'checkCircle',
+    failed: 'xCircle',
+};
+
+function traceTone(type: string): { color: string; bg: string } {
+    if (
+        type === 'completed' ||
+        type === 'validated' ||
+        type === 'approval_granted'
+    ) {
+        return { color: 'var(--teal-600)', bg: 'var(--teal-100)' };
+    }
+
+    if (type === 'failed' || type === 'approval_denied') {
+        return { color: 'var(--red-500)', bg: 'var(--red-100)' };
+    }
+
+    if (
+        type === 'tool_required' ||
+        type === 'requires_approval' ||
+        type === 'model_failover'
+    ) {
+        return { color: 'var(--orange-600)', bg: 'var(--orange-100)' };
+    }
+
+    return { color: 'var(--blue-500)', bg: 'var(--blue-100)' };
 }
 
 /* ---------- local sub-components ---------- */
@@ -93,277 +139,119 @@ function CheckLine({ ok, label }: CheckLineProps) {
     );
 }
 
-function buildTrace(
-    run: Run,
-    ag: Agent | undefined,
-    MAAC: MaacData,
-): TraceEvent[] {
-    const toolName = run.tools[0]
-        ? (MAAC.toolById(run.tools[0])?.name ?? 'getOperationalRecords')
-        : 'getOperationalRecords';
-    const isClient = run.tools[0]
-        ? MAAC.toolById(run.tools[0])?.execMode === 'client'
-        : true;
-    const llm = MAAC.llmById(run.llm) as Llm | undefined;
-    const base: TraceEvent[] = [
-        {
-            t: '+0ms',
-            title: 'Run started',
-            desc: `Run ${run.id} accepted from ${run.caller}`,
-            icon: 'play',
-            state: 'done',
-        },
-        {
-            t: '+40ms',
-            title: 'Agent initialized',
-            desc: `${ag?.name} ${ag?.version} loaded`,
-            icon: 'agents',
-            state: 'done',
-        },
-        {
-            t: '+90ms',
-            title: 'LLM selected',
-            desc: `${llm?.name} · temp ${ag?.temp}`,
-            icon: 'llm',
-            state: 'done',
-        },
-        {
-            t: '+820ms',
-            title: 'Prompt processed',
-            desc: `${run.tokensIn.toLocaleString()} input tokens`,
-            icon: 'doc',
-            state: 'done',
-        },
-    ];
-
-    if (run.tools.length) {
-        base.push({
-            t: '+1.4s',
-            title: `Tool required: ${toolName}`,
-            desc: isClient
-                ? 'Agent requested a client-side tool'
-                : 'Agent invoked a MAAC-hosted tool',
-            icon: 'tools',
-            state: 'done',
-            tool: true,
-        });
-
-        if (isClient) {
-            base.push({
-                t: '+1.5s',
-                title: 'Waiting for client-side execution',
-                desc: 'MAAC paused and returned a tool request to the application SDK',
-                icon: 'clock',
-                state:
-                    run.status === 'waiting_for_client'
-                        ? 'active'
-                        : run.status === 'expired'
-                          ? 'fail'
-                          : 'done',
-            });
-        }
-    }
-
-    if (run.status === 'waiting_for_client') {
-        base.push({
-            t: 'now',
-            title: 'Awaiting tool result',
-            desc: 'The application SDK has not yet returned the result',
-            icon: 'clock',
-            state: 'pending',
-        });
-    } else if (run.status === 'expired') {
-        base.push({
-            t: '+60s',
-            title: 'Run expired',
-            desc: run.error ?? '',
-            icon: 'xCircle',
-            state: 'fail',
-        });
-    } else if (run.status === 'failed') {
-        base.push({
-            t: run.latency,
-            title: 'Validation failed',
-            desc: run.error ?? '',
-            icon: 'xCircle',
-            state: 'fail',
-        });
-    } else if (run.status === 'running') {
-        base.push({
-            t: 'now',
-            title: 'Agent reasoning',
-            desc: 'Processing tool results',
-            icon: 'refresh',
-            state: 'pending',
-        });
-    } else if (run.status === 'cancelled') {
-        base.push({
-            t: run.latency,
-            title: 'Run cancelled',
-            desc: 'Cancelled by caller',
-            icon: 'x',
-            state: 'fail',
-        });
-    } else {
-        if (run.tools.length) {
-            base.push({
-                t: '+3.1s',
-                title: 'Tool result received',
-                desc: 'Result validated against output schema',
-                icon: 'check2',
-                state: 'done',
-            });
-            base.push({
-                t: '+3.2s',
-                title: 'Agent resumed',
-                desc: 'MAAC resumed the run with the tool result',
-                icon: 'refresh',
-                state: 'done',
-            });
-        }
-
-        base.push({
-            t: `+${run.latency.replace('s', '')}`,
-            title: 'Final response generated',
-            desc: `${run.tokensOut.toLocaleString()} output tokens`,
-            icon: 'sparkles',
-            state: 'done',
-        });
-        base.push({
-            t: run.latency,
-            title: 'Run completed',
-            desc: `Total latency ${run.latency} · $${run.cost.toFixed(4)}`,
-            icon: 'check2',
-            state: 'done',
-        });
-    }
-
-    return base;
-}
-
 interface TraceTimelineProps {
-    events: TraceEvent[];
+    trace: TraceEntry[];
 }
 
-function TraceTimeline({ events }: TraceTimelineProps) {
-    const colorOf = (s: TraceState): string =>
-        s === 'done'
-            ? 'var(--teal-600)'
-            : s === 'active'
-              ? 'var(--orange-600)'
-              : s === 'fail'
-                ? 'var(--red-600)'
-                : 'var(--blue-500)';
-    const bgOf = (s: TraceState): string =>
-        s === 'done'
-            ? 'var(--teal-100)'
-            : s === 'active'
-              ? 'var(--orange-100)'
-              : s === 'fail'
-                ? 'var(--red-100)'
-                : 'var(--blue-100)';
-
+function TraceTimeline({ trace }: TraceTimelineProps) {
     return (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {events.map((e, i) => (
-                <div key={i} style={{ display: 'flex', gap: 13 }}>
+            {trace.map((event, i) => {
+                const tone = traceTone(event.type);
+
+                return (
                     <div
+                        key={event.id}
                         style={{
                             display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                        }}
-                    >
-                        <span
-                            style={
-                                {
-                                    width: 30,
-                                    height: 30,
-                                    borderRadius: 999,
-                                    background: bgOf(e.state),
-                                    color: colorOf(e.state),
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0,
-                                    border:
-                                        e.state === 'pending' ||
-                                        e.state === 'active'
-                                            ? `2px solid ${colorOf(e.state)}`
-                                            : 'none',
-                                    animation:
-                                        e.state === 'pending' ||
-                                        e.state === 'active'
-                                            ? 'pulseDot 1.6s infinite'
-                                            : 'none',
-                                } as CSSProperties
-                            }
-                        >
-                            <Icon name={e.icon} size={15} />
-                        </span>
-                        {i < events.length - 1 && (
-                            <span
-                                style={{
-                                    flex: 1,
-                                    width: 2,
-                                    background:
-                                        e.state === 'fail'
-                                            ? 'var(--red-100)'
-                                            : 'var(--border)',
-                                    minHeight: 18,
-                                }}
-                            />
-                        )}
-                    </div>
-                    <div
-                        style={{
-                            paddingBottom: i < events.length - 1 ? 16 : 0,
-                            flex: 1,
-                            minWidth: 0,
+                            gap: 13,
+                            animation: 'fadeUp .3s ease both',
                         }}
                     >
                         <div
                             style={{
                                 display: 'flex',
+                                flexDirection: 'column',
                                 alignItems: 'center',
-                                gap: 9,
-                                flexWrap: 'wrap',
                             }}
                         >
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>
-                                {e.title}
-                            </span>
                             <span
-                                className="mono"
-                                style={{ fontSize: 11, color: 'var(--text-3)' }}
+                                style={{
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: 999,
+                                    background: tone.bg,
+                                    color: tone.color,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                }}
                             >
-                                {e.t}
+                                <Icon
+                                    name={TRACE_ICONS[event.type] ?? 'runs'}
+                                    size={15}
+                                />
                             </span>
-                            {e.tool && (
-                                <Badge tone="orange" soft>
-                                    tool call
-                                </Badge>
+                            {i < trace.length - 1 && (
+                                <span
+                                    style={{
+                                        flex: 1,
+                                        width: 2,
+                                        background: 'var(--border)',
+                                        minHeight: 18,
+                                    }}
+                                />
                             )}
                         </div>
                         <div
                             style={{
-                                fontSize: 12,
-                                color: 'var(--text-3)',
-                                marginTop: 2,
+                                paddingBottom: i < trace.length - 1 ? 16 : 0,
+                                flex: 1,
+                                minWidth: 0,
                             }}
                         >
-                            {e.desc}
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 9,
+                                    flexWrap: 'wrap',
+                                }}
+                            >
+                                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                                    {event.label}
+                                </span>
+                                {event.occurredAt && (
+                                    <span
+                                        className="mono"
+                                        style={{
+                                            fontSize: 11,
+                                            color: 'var(--text-3)',
+                                        }}
+                                    >
+                                        {event.occurredAt}
+                                    </span>
+                                )}
+                            </div>
+                            {event.message && (
+                                <div
+                                    style={{
+                                        fontSize: 12,
+                                        color: 'var(--text-3)',
+                                        marginTop: 2,
+                                    }}
+                                >
+                                    {event.message}
+                                </div>
+                            )}
                         </div>
                     </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 }
 
 /* ---------- page ---------- */
 
-export default function Show({ id }: { id: string }) {
+export default function Show({
+    id,
+    trace,
+}: {
+    id: string;
+    trace: TraceEntry[] | null;
+}) {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
     const run = MAAC.byId(MAAC.runs, id) || MAAC.runs[0];
@@ -375,8 +263,6 @@ export default function Show({ id }: { id: string }) {
     const ag = MAAC.agentById(run.agentId);
     const llm = MAAC.llmById(run.llm);
     const failed = ['failed', 'expired'].includes(run.status);
-
-    const events = buildTrace(run, ag, MAAC);
 
     const finalOutput: string | null =
         run.status === 'completed' ? (run.output ?? null) : null;
@@ -537,7 +423,15 @@ export default function Show({ id }: { id: string }) {
                                 />
                             </div>
                             <div style={{ padding: '14px 16px 16px' }}>
-                                <TraceTimeline events={events} />
+                                {trace && trace.length > 0 ? (
+                                    <TraceTimeline trace={trace} />
+                                ) : (
+                                    <EmptyState
+                                        icon="runs"
+                                        title="No trace recorded"
+                                        desc="This run has no recorded observability trace yet."
+                                    />
+                                )}
                             </div>
                         </Card>
                     </div>
@@ -682,8 +576,12 @@ export default function Show({ id }: { id: string }) {
                                     label="Tool result validated against schema"
                                 />
                                 <CheckLine
-                                    ok
-                                    label="Sensitive fields masked in log"
+                                    ok={!!run.masked}
+                                    label={
+                                        run.masked
+                                            ? 'Sensitive fields masked in log'
+                                            : 'No field masking applied to this run'
+                                    }
                                 />
                             </div>
                         </Card>

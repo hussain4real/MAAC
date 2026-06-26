@@ -36,6 +36,7 @@ class AgentRunResource extends JsonResource
             'tokensOut' => $this->tokens_out,
             'cost' => $this->cost,
             'latency' => $this->latency_ms !== null ? number_format($this->latency_ms / 1000, 1).'s' : '—',
+            'latencyMs' => $this->latency_ms,
             'started' => $this->started_at?->format('d M H:i:s') ?? '—',
             'completed' => $this->completed_at?->format('d M H:i:s') ?? '—',
             'input' => $this->input,

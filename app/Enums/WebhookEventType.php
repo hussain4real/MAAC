@@ -3,9 +3,11 @@
 namespace App\Enums;
 
 /**
- * The run lifecycle events MAAC delivers to a registered webhook endpoint. They
- * mirror the externally-observable run transitions: the run starts processing,
- * pauses for a client-side tool, completes, fails, expires, or is cancelled.
+ * The events MAAC delivers to a registered webhook endpoint. Most mirror the
+ * externally-observable run transitions (the run starts, pauses for a
+ * client-side tool, completes, fails, expires, or is cancelled); the
+ * implementation event fires when an application reports a client-side tool
+ * handler, so its SDK is kept informed of each tool's implementation status.
  */
 enum WebhookEventType: string
 {
@@ -16,6 +18,9 @@ enum WebhookEventType: string
     case RunFailed = 'run.failed';
     case RunExpired = 'run.expired';
     case RunCancelled = 'run.cancelled';
+    case ImplementationReported = 'implementation.reported';
+    case ImplementationOutdated = 'implementation.outdated';
+    case ImplementationRecovered = 'implementation.recovered';
 
     /**
      * Get the human-readable label for the event type.
@@ -30,6 +35,9 @@ enum WebhookEventType: string
             self::RunFailed => 'Run failed',
             self::RunExpired => 'Run expired',
             self::RunCancelled => 'Run cancelled',
+            self::ImplementationReported => 'Tool implementation reported',
+            self::ImplementationOutdated => 'Tool implementation outdated',
+            self::ImplementationRecovered => 'Tool implementation recovered',
         };
     }
 

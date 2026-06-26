@@ -3,6 +3,12 @@
 namespace App\Http\Controllers\Maac;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Maac\TraceEventResource;
+use App\Models\Agent;
+use App\Models\AgentRun;
+use App\Models\AgentVersion;
+use App\Models\Membership;
+use App\Support\Sdk\VersionJourney;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -44,7 +50,30 @@ class ConsoleController extends Controller
 
     public function agent(Request $request): Response
     {
-        return Inertia::render('maac/agents/show', ['id' => $request->route('agent')]);
+        $slug = (string) $request->route('agent');
+        $team = $request->user()->currentTeam()->firstOrFail();
+        $agent = Agent::query()
+            ->whereHas('project.application', fn ($query) => $query->where('team_id', $team->id))
+            ->where('slug', $slug)
+            ->with(['versions' => fn ($query) => $query->with('publisher')->orderByDesc('created_at')])
+            ->first();
+
+        return Inertia::render('maac/agents/show', [
+            'id' => $slug,
+            // The agent's real published version history (from agent_versions),
+            // newest first, for the Versions tab.
+            'history' => fn (): ?array => $agent === null
+                ? null
+                : $agent->versions->map(fn (AgentVersion $version): array => [
+                    'version' => $version->version,
+                    'note' => $version->notes,
+                    // A version is only attributed to a user once published; the
+                    // initial draft (and any legacy row) has no publisher.
+                    'author' => $version->published_by !== null ? $version->publisher->name : 'system',
+                    'date' => ($version->published_at ?? $version->created_at)?->diffForHumans() ?? '—',
+                    'current' => $version->version === $agent->version,
+                ])->all(),
+        ]);
     }
 
     public function tools(): Response
@@ -52,9 +81,18 @@ class ConsoleController extends Controller
         return Inertia::render('maac/tools/index');
     }
 
-    public function tool(Request $request): Response
+    public function tool(Request $request, VersionJourney $journey): Response
     {
-        return Inertia::render('maac/tools/show', ['id' => $request->route('tool')]);
+        $slug = (string) $request->route('tool');
+        $contract = $request->user()->currentTeam()->firstOrFail()
+            ->toolContracts()->where('slug', $slug)->first();
+
+        return Inertia::render('maac/tools/show', [
+            'id' => $slug,
+            // The tool's real lifecycle — contract version snapshots + SDK
+            // implementation transitions — for the Audit history timeline.
+            'history' => fn (): ?array => $contract === null ? null : $journey->toolReport($contract),
+        ]);
     }
 
     public function sdk(): Response
@@ -65,6 +103,20 @@ class ConsoleController extends Controller
     public function sdkDocs(): Response
     {
         return Inertia::render('maac/sdk-docs');
+    }
+
+    /**
+     * Render the tool version journey: the per-tool contract version history and
+     * the per-application implementation timeline for the current team. The data
+     * is a page-scoped lazy prop so it is only computed for this page.
+     */
+    public function journey(Request $request, VersionJourney $journey): Response
+    {
+        $team = $request->user()->currentTeam()->firstOrFail();
+
+        return Inertia::render('maac/journey', [
+            'journey' => fn (): array => $journey->teamReport($team),
+        ]);
     }
 
     public function playground(): Response
@@ -79,7 +131,21 @@ class ConsoleController extends Controller
 
     public function run(Request $request): Response
     {
-        return Inertia::render('maac/runs/show', ['id' => $request->route('run')]);
+        $slug = (string) $request->route('run');
+        $team = $request->user()->currentTeam()->firstOrFail();
+        $run = AgentRun::query()
+            ->whereHas('application', fn ($query) => $query->where('team_id', $team->id))
+            ->where('slug', $slug)
+            ->first();
+
+        return Inertia::render('maac/runs/show', [
+            'id' => $slug,
+            // The run's real observability trace — the ordered lifecycle events
+            // recorded by the runtime — for the Execution timeline.
+            'trace' => fn (): ?array => $run === null
+                ? null
+                : TraceEventResource::collection($run->traceEvents()->orderBy('sequence')->get())->resolve(),
+        ]);
     }
 
     public function llmProviders(): Response
@@ -132,8 +198,23 @@ class ConsoleController extends Controller
         return Inertia::render('maac/incidents');
     }
 
-    public function settings(): Response
+    public function settings(Request $request): Response
     {
-        return Inertia::render('maac/settings');
+        $team = $request->user()->currentTeam()->firstOrFail();
+
+        return Inertia::render('maac/settings', [
+            // The team's real members and their team role for the Members tab.
+            'members' => $team->memberships()
+                ->with('user')
+                ->get()
+                ->map(fn (Membership $membership): array => [
+                    'name' => $membership->user->name,
+                    'email' => $membership->user->email,
+                    'role' => $membership->role->label(),
+                ])
+                ->sortBy('name')
+                ->values()
+                ->all(),
+        ]);
     }
 }

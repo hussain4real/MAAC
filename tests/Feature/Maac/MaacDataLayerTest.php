@@ -103,13 +103,15 @@ test('seeded completed runs carry a real final response', function () {
 test('the console prop exposes a run\'s real final output', function () {
     [, $team] = ownerAndTeam();
     $agent = maacAgent($team);
-    $completed = maacRun($agent, ['status' => RunStatus::Completed, 'output' => 'Berth utilization is 84%.']);
-    $waiting = maacRun($agent, ['status' => RunStatus::WaitingForClient, 'output' => null]);
+    $completed = maacRun($agent, ['status' => RunStatus::Completed, 'output' => 'Berth utilization is 84%.', 'latency_ms' => 4200]);
+    $waiting = maacRun($agent, ['status' => RunStatus::WaitingForClient, 'output' => null, 'latency_ms' => null]);
 
     $data = MaacConsoleData::forTeam($team);
 
     expect(collect($data['runs'])->firstWhere('id', $completed->slug)['output'])->toBe('Berth utilization is 84%.')
-        ->and(collect($data['runs'])->firstWhere('id', $waiting->slug)['output'])->toBeNull();
+        ->and(collect($data['runs'])->firstWhere('id', $waiting->slug)['output'])->toBeNull()
+        ->and(collect($data['runs'])->firstWhere('id', $completed->slug)['latencyMs'])->toBe(4200)
+        ->and(collect($data['runs'])->firstWhere('id', $waiting->slug)['latencyMs'])->toBeNull();
 });
 
 test('the seeder is idempotent', function () {

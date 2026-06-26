@@ -61,17 +61,16 @@ class SdkStubGenerator
         $returnArgs = $this->lines($tool->output_schema, fn (string $f): string => "    {$f}: result.{$f},");
 
         return <<<TS
-        import { maac } from "./maac-client";
+        import { ToolHandlerRegistry } from "@maac/sdk";
 
         // Handler for the "{$tool->slug}" client-side tool (contract v{$tool->version}).
-        maac.registerTool("{$tool->slug}", async (args, ctx) => {
-          // Enforce caller permissions before returning any data.
-          if (!ctx.user.hasPermission("{$perm}")) {
-            return { status: "rejected", reason: "Not permitted" };
-          }
+        // Pass `registry` to client.run(agentSlug, input, registry) — MAAC pauses the run here.
+        const registry = new ToolHandlerRegistry();
 
+        registry.register("{$tool->slug}", (args, ctx) => {
+          // ctx: { run, toolCall }. Enforce YOUR app's own authorization (e.g. "{$perm}").
           // args: { {$argShape} }
-          const result = await yourApp.query({
+          const result = yourApp.query({
         {$queryArgs}
           });
 
@@ -94,15 +93,15 @@ class SdkStubGenerator
         return <<<PHP
         <?php
 
-        use Maac\\Sdk\\Context;
+        use Maac\\Sdk\\Tools\\ToolContext;
+        use Maac\\Sdk\\Tools\\ToolHandlerRegistry;
 
         // Handler for the "{$tool->slug}" client-side tool (contract v{$tool->version}).
-        \$maac->registerTool('{$tool->slug}', function (array \$args, Context \$ctx): array {
-            // Enforce caller permissions before returning any data.
-            if (! \$ctx->user->can('{$perm}')) {
-                return ['status' => 'rejected', 'reason' => 'Not permitted'];
-            }
+        // Pass \$registry to \$client->run(\$agentSlug, \$input, \$registry) — MAAC pauses the run here.
+        \$registry = new ToolHandlerRegistry;
 
+        \$registry->registerCallable('{$tool->slug}', function (array \$args, ToolContext \$ctx): array {
+            // \$ctx: run + toolCall. Enforce YOUR app's own authorization (e.g. '{$perm}').
             // \$args: array{{$argShape}}
             \$result = YourApp::query([
         {$queryArgs}
@@ -126,17 +125,17 @@ class SdkStubGenerator
         $returnArgs = $this->lines($tool->output_schema, fn (string $f): string => "        \"{$f}\": result[\"{$f}\"],");
 
         return <<<PY
-        from maac_sdk import maac, Context
+        from maac_sdk import ToolHandlerRegistry
+
+        registry = ToolHandlerRegistry()
 
 
-        @maac.tool("{$tool->slug}")  # contract v{$tool->version}
-        async def {$fn}(args: dict, ctx: Context) -> dict:
-            # Enforce caller permissions before returning any data.
-            if not ctx.user.has_permission("{$perm}"):
-                return {"status": "rejected", "reason": "Not permitted"}
-
+        # Handler for the "{$tool->slug}" client-side tool (contract v{$tool->version}).
+        @registry.register("{$tool->slug}")
+        def {$fn}(args: dict, ctx: dict) -> dict:
+            # ctx: run + tool_call. Enforce YOUR app's own authorization (e.g. "{$perm}").
             # args: {{$argShape}}
-            result = await your_app.query(
+            result = your_app.query(
         {$queryArgs}
             )
 

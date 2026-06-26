@@ -1,7 +1,11 @@
 <?php
 
+use App\Actions\Maac\CreateToolContract;
+use App\Enums\ExecMode;
 use App\Enums\MaacRole;
+use App\Enums\Sensitivity;
 use App\Enums\TeamRole;
+use App\Enums\ToolScope;
 use App\Models\Agent;
 use App\Models\AgentRun;
 use App\Models\Application;
@@ -136,4 +140,26 @@ function bindFakeRouter(): FakeLlmRouter
     app()->instance(LlmRouter::class, $fake);
 
     return $fake;
+}
+
+/**
+ * Minimal valid create payload for a client-side tool contract, suitable for
+ * {@see CreateToolContract::handle()}.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function toolContractData(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Fetch Records',
+        'scope' => ToolScope::Project->value,
+        'execution_mode' => ExecMode::Client->value,
+        'sensitivity' => Sensitivity::Internal->value,
+        'requires_approval' => false,
+        'timeout_seconds' => 15,
+        'max_payload_kb' => 256,
+        'input_schema' => ['query' => 'string'],
+        'output_schema' => ['result' => 'string'],
+    ], $overrides);
 }

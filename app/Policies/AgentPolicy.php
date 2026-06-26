@@ -30,6 +30,16 @@ class AgentPolicy
     }
 
     /**
+     * Determine whether the user can invoke the agent from the console
+     * playground. Any member of the owning team may test-run an agent; the
+     * runtime still enforces that the agent is published before it executes.
+     */
+    public function run(User $user, Agent $agent): bool
+    {
+        return $user->belongsToTeam($agent->project->application->team);
+    }
+
+    /**
      * Determine whether the user can create an agent, optionally scoped to the
      * target project.
      */
