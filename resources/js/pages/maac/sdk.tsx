@@ -120,7 +120,7 @@ function ToolImplPanel({ tool, app, onClose }: ToolImplPanelProps) {
     const [copied, setCopied] = useState(false);
     const ag = MAAC.agentById(tool.usedBy[0]);
     const argList = Object.keys(tool.input);
-    const stub = sdkStub(tool, lang, argList);
+    const stub = sdkStub(tool, lang, argList, Object.keys(tool.output));
     const status = implStatusFor(tool, app.env);
     const isImplemented = status === 'implemented';
     const checklist = [

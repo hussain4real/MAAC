@@ -23,6 +23,8 @@ class HostedToolRegistry
     {
         $this->register('echo', new EchoHostedTool);
         $this->register('current_time', new CurrentTimeHostedTool);
+        $this->register('sum', new SumHostedTool);
+        $this->register('vessel_status', new VesselStatusHostedTool);
     }
 
     /**

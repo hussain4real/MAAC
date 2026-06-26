@@ -53,6 +53,8 @@ use Illuminate\Support\Carbon;
  * @property-read KnowledgeSource|null $knowledgeSource
  * @property-read Collection<int, ToolAssignment> $assignments
  * @property-read Collection<int, ToolImplementation> $implementations
+ * @property-read Collection<int, ToolContractVersion> $versions
+ * @property-read Collection<int, ToolImplementationEvent> $implementationEvents
  * @property-read Collection<int, Agent> $agents
  * @property-read Collection<int, ToolCall> $toolCalls
  */
@@ -120,6 +122,26 @@ class ToolContract extends Model
     public function implementations(): HasMany
     {
         return $this->hasMany(ToolImplementation::class);
+    }
+
+    /**
+     * Get the append-only version snapshots of the contract (its journey).
+     *
+     * @return HasMany<ToolContractVersion, $this>
+     */
+    public function versions(): HasMany
+    {
+        return $this->hasMany(ToolContractVersion::class);
+    }
+
+    /**
+     * Get the append-only implementation timeline events recorded for the contract.
+     *
+     * @return HasMany<ToolImplementationEvent, $this>
+     */
+    public function implementationEvents(): HasMany
+    {
+        return $this->hasMany(ToolImplementationEvent::class);
     }
 
     /**

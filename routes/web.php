@@ -17,11 +17,13 @@ use App\Http\Controllers\Maac\KnowledgeSourceController;
 use App\Http\Controllers\Maac\LlmProviderController;
 use App\Http\Controllers\Maac\McpConnectorController;
 use App\Http\Controllers\Maac\ModelRoutingPolicyController;
+use App\Http\Controllers\Maac\PlaygroundRunController;
 use App\Http\Controllers\Maac\ProjectController;
 use App\Http\Controllers\Maac\QuotaLimitController;
 use App\Http\Controllers\Maac\SsoConnectionController;
 use App\Http\Controllers\Maac\ToolContractController;
 use App\Http\Controllers\Maac\VaultSecretController;
+use App\Http\Controllers\Maac\VersionJourneyExportController;
 use App\Http\Controllers\Maac\WebhookDeliveryController;
 use App\Http\Controllers\Maac\WebhookEndpointController;
 use App\Http\Controllers\SsoController;
@@ -51,6 +53,8 @@ Route::prefix('{current_team}')
         Route::get('tools/{tool}', [ConsoleController::class, 'tool'])->name('tools.show');
         Route::get('sdk', [ConsoleController::class, 'sdk'])->name('sdk');
         Route::get('sdk/docs', [ConsoleController::class, 'sdkDocs'])->name('sdk.docs');
+        Route::get('journey', [ConsoleController::class, 'journey'])->name('journey');
+        Route::get('journey/export', [VersionJourneyExportController::class, 'download'])->name('journey-export');
         Route::get('playground', [ConsoleController::class, 'playground'])->name('playground');
         Route::get('runs', [ConsoleController::class, 'runs'])->name('runs');
         Route::get('runs/{run}', [ConsoleController::class, 'run'])->name('runs.show');
@@ -72,6 +76,11 @@ Route::prefix('{current_team}')
         Route::post('credentials/{credential}/revoke', [CredentialController::class, 'revoke'])->name('credentials.revoke');
 
         Route::post('agents/{agent}/publish', [AgentController::class, 'publish'])->name('agents.publish');
+
+        // MAAC console (Phase 7+ — real playground runtime: invoke a published
+        // agent from the console via the same AgentRunner the SDK uses).
+        Route::post('playground/agents/{agent}/runs', [PlaygroundRunController::class, 'store'])->name('playground.runs.store');
+        Route::post('playground/runs/{run}/tool-result', [PlaygroundRunController::class, 'toolResult'])->name('playground.runs.tool-result');
 
         Route::resource('applications', ApplicationController::class)->only(['store', 'update', 'destroy']);
         Route::resource('projects', ProjectController::class)->only(['store', 'update', 'destroy']);

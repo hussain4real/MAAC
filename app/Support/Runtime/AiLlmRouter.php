@@ -3,17 +3,19 @@
 namespace App\Support\Runtime;
 
 use App\Support\Runtime\Contracts\LlmRouter;
-use Laravel\Ai\AnonymousAgent;
+use Laravel\Ai\Ai;
+use Laravel\Ai\Responses\Data\ToolCall;
 
 /**
  * The production LLM Router, backed by the Laravel AI SDK (`laravel/ai`).
  *
- * MAAC must own the orchestration loop so it can pause for client-side tools,
- * which the SDK's auto-executing agent loop cannot do. This router therefore
- * asks the model for a single turn and surfaces tool requests through a compact
- * JSON protocol embedded in the instructions: the model either replies with a
- * `{"tool": ..., "arguments": ...}` envelope (a tool call) or with plain text
- * (a final answer). The MAAC runtime decides how to route any requested tool.
+ * MAAC owns the orchestration loop so it can pause for client-side tools, which
+ * the SDK's auto-executing agent loop cannot. The router therefore drives a
+ * {@see RuntimeAgent} capped at a single step: it offers the agent's tools as
+ * native provider function-calls (which models follow reliably) and surfaces any
+ * tool the model requests back to MAAC un-executed, for MAAC to route by
+ * execution mode. A plain reply is returned as the final answer. A legacy
+ * text-protocol envelope ({@see self::parse()}) is still honored as a fallback.
  */
 class AiLlmRouter implements LlmRouter
 {
@@ -24,9 +26,11 @@ class AiLlmRouter implements LlmRouter
     {
         $this->applyVaultKey($request);
 
-        $agent = new AnonymousAgent($this->instructions($request), [], []);
+        $tools = $this->offersTools($request)
+            ? array_map(fn (LlmToolDefinition $tool): RuntimeTool => new RuntimeTool($tool), $request->tools)
+            : [];
 
-        $response = $agent->prompt(
+        $response = (new RuntimeAgent($request->systemPrompt, $tools))->prompt(
             $this->transcript($request->messages),
             provider: $request->providerDriver,
             model: $request->modelCode,
@@ -38,7 +42,31 @@ class AiLlmRouter implements LlmRouter
             $response->usage->completionTokens,
         );
 
+        $names = array_map(fn (LlmToolDefinition $tool): string => $tool->name, $request->tools);
+        $call = $response->toolCalls->first();
+
+        if ($call instanceof ToolCall && in_array($call->name, $names, true)) {
+            return LlmCompletion::toolCall($call->name, $call->arguments, $usage);
+        }
+
         return $this->parse(trim($response->text), $request->tools, $usage);
+    }
+
+    /**
+     * Whether to offer the agent's tools to the model on this turn. Tools are
+     * withheld immediately after a tool result so the model produces the final
+     * answer from it rather than requesting the same tool again.
+     */
+    private function offersTools(LlmRequest $request): bool
+    {
+        if ($request->tools === []) {
+            return false;
+        }
+
+        $messages = $request->messages;
+        $last = end($messages);
+
+        return ! ($last instanceof LlmMessage && $last->role === 'tool');
     }
 
     /**
@@ -50,17 +78,27 @@ class AiLlmRouter implements LlmRouter
     {
         if ($request->apiKey !== null) {
             config(["ai.providers.{$request->providerDriver}.key" => $request->apiKey]);
+
+            // The AI manager memoizes a provider with the key it was first
+            // resolved with, so drop the cached instance to force it to be
+            // rebuilt with the freshly applied key. This is what guarantees a
+            // vault rotation takes effect on the very next turn, even inside a
+            // long-lived worker that already used the provider.
+            Ai::forgetInstance($request->providerDriver);
         }
     }
 
     /**
-     * Interpret the model's reply as either a tool-call envelope or final text.
+     * Interpret a plain-text reply as either a final answer or a legacy tool-call
+     * envelope. A model may wrap the envelope in a Markdown code fence, so the
+     * candidate is unwrapped before decoding; anything that is not a recognized
+     * tool envelope is returned verbatim as the final answer.
      *
      * @param  array<int, LlmToolDefinition>  $tools
      */
     private function parse(string $text, array $tools, LlmUsage $usage): LlmCompletion
     {
-        $decoded = json_decode($text, true);
+        $decoded = json_decode($this->unwrap($text), true);
         $names = array_map(fn (LlmToolDefinition $tool): string => $tool->name, $tools);
 
         if (is_array($decoded) && isset($decoded['tool']) && is_string($decoded['tool']) && in_array($decoded['tool'], $names, true)) {
@@ -73,42 +111,21 @@ class AiLlmRouter implements LlmRouter
     }
 
     /**
-     * Compose the system instructions, including the tool-call protocol when the
-     * agent has tools available.
+     * Strip a wrapping Markdown code fence (```` ```json … ``` ````) from the
+     * reply so a fenced tool-call envelope still decodes. Non-fenced text is
+     * returned trimmed and unchanged.
      */
-    private function instructions(LlmRequest $request): string
+    private function unwrap(string $text): string
     {
-        if ($request->tools === []) {
-            return $request->systemPrompt;
+        $trimmed = trim($text);
+
+        if (! str_starts_with($trimmed, '```')) {
+            return $trimmed;
         }
 
-        return $request->systemPrompt."\n\n".$this->toolProtocol($request->tools);
-    }
+        $inner = preg_replace('/^```[a-zA-Z0-9]*\n?|\n?```$/', '', $trimmed);
 
-    /**
-     * Build the tool-call protocol preamble describing the available tools.
-     *
-     * @param  array<int, LlmToolDefinition>  $tools
-     */
-    private function toolProtocol(array $tools): string
-    {
-        $catalog = array_map(
-            fn (LlmToolDefinition $tool): string => sprintf(
-                '- %s: %s (arguments: %s)',
-                $tool->name,
-                $tool->description,
-                json_encode($tool->inputSchema),
-            ),
-            $tools,
-        );
-
-        return implode("\n", [
-            'You may call a tool to gather information. To call a tool, respond with ONLY a JSON',
-            'object of the form {"tool": "<name>", "arguments": { ... }} and nothing else.',
-            'When you have enough information, respond with the final answer as plain text.',
-            'Available tools:',
-            ...$catalog,
-        ]);
+        return trim($inner ?? $trimmed);
     }
 
     /**

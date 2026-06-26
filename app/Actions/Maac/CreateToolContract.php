@@ -6,13 +6,16 @@ use App\Enums\ExecMode;
 use App\Enums\ImplStatus;
 use App\Models\Team;
 use App\Models\ToolContract;
+use App\Support\Sdk\ContractVersionRecorder;
 use App\Support\Slug;
 use App\Support\Tools\ToolConfigInput;
 
 class CreateToolContract
 {
+    public function __construct(private readonly ContractVersionRecorder $versions) {}
+
     /**
-     * Create a MAAC tool contract.
+     * Create a MAAC tool contract and snapshot its initial version.
      *
      * @param  array<string, mixed>  $data
      */
@@ -25,7 +28,7 @@ class CreateToolContract
             ? ImplStatus::Required->value
             : ImplStatus::Ready->value;
 
-        return ToolContract::create([
+        $contract = ToolContract::create([
             ...$data,
             'team_id' => $team->id,
             'slug' => Slug::unique('tool_contracts', (string) $data['name']),
@@ -36,6 +39,10 @@ class CreateToolContract
             'version' => $data['version'] ?? '1.0.0',
             'requires_approval' => $requiresApproval,
         ]);
+
+        $this->versions->recordInitial($contract);
+
+        return $contract;
     }
 
     /**

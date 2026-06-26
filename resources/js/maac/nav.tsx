@@ -36,6 +36,7 @@ export type RouteName =
     | 'tool'
     | 'sdk'
     | 'sdkDocs'
+    | 'journey'
     | 'playground'
     | 'connectors'
     | 'knowledge'
@@ -90,6 +91,7 @@ const SEGMENT_TO_SCREEN: Record<string, ScreenId> = {
     agents: 'agents',
     tools: 'tools',
     sdk: 'sdk',
+    journey: 'journey',
     playground: 'playground',
     connectors: 'connectors',
     knowledge: 'knowledge',
@@ -134,6 +136,8 @@ function urlFor(name: RouteName, team: string, params: GoParams = {}): string {
             return ConsoleRoutes.sdk.url(team);
         case 'sdkDocs':
             return ConsoleRoutes.sdkDocs.url(team);
+        case 'journey':
+            return ConsoleRoutes.journey.url(team);
         case 'playground':
             return ConsoleRoutes.playground.url(
                 team,

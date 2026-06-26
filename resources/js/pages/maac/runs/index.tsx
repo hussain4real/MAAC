@@ -35,20 +35,18 @@ export default function Runs() {
                 r.input.toLowerCase().includes(q.toLowerCase())),
     );
 
-    const runs7d = scope.agents.reduce((s, a) => s + a.runs7d, 0);
-    const runsToday = scope.isAll
-        ? MAAC.dashboard.stats.runsToday
-        : Math.max(all.length, Math.round(runs7d / 7));
     const cards = scope.isAll
         ? {
               today: MAAC.dashboard.stats.runsToday.toLocaleString(),
               done: MAAC.dashboard.stats.success.toLocaleString(),
               waiting: MAAC.dashboard.stats.waitingClient,
-              failed: 40,
+              failed: MAAC.dashboard.stats.failed,
           }
         : {
-              today: runsToday.toLocaleString(),
-              done: Math.round(runsToday * 0.95).toLocaleString(),
+              today: all.length.toLocaleString(),
+              done: all
+                  .filter((r) => r.status === 'completed')
+                  .length.toLocaleString(),
               waiting: all.filter((r) => r.status === 'waiting_for_client')
                   .length,
               failed: all.filter((r) =>

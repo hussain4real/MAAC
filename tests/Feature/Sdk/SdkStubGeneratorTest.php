@@ -20,36 +20,42 @@ test('it generates a stub for every supported language', function () {
     expect($stubs)->toHaveKeys(['typescript', 'php', 'python']);
 });
 
-test('the typescript stub includes name, args, output, permission and return', function () {
+test('the typescript stub registers a real handler with args, output and permission hint', function () {
     $stub = $this->generator->generate($this->tool, SdkLanguage::TypeScript);
 
     expect($stub)
-        ->toContain('registerTool("getOperationalRecords"')
-        ->toContain('getoperationalrecords:read')   // permission placeholder
+        ->toContain('import { ToolHandlerRegistry } from "@maac/sdk"')
+        ->toContain('registry.register("getOperationalRecords"')
+        ->toContain('getoperationalrecords:read')   // permission hint (app-owned authorization)
         ->toContain('from_date: args.from_date')    // argument shape
         ->toContain('records: result.records')       // output shape / return pattern
-        ->toContain('contract v2.1.0');
+        ->toContain('contract v2.1.0')
+        ->not->toContain('ctx.user');                // the fictional API is gone
 });
 
-test('the php stub includes name, args, output, permission and return', function () {
+test('the php stub registers a real handler with args, output and permission hint', function () {
     $stub = $this->generator->generate($this->tool, SdkLanguage::Php);
 
     expect($stub)
-        ->toContain("registerTool('getOperationalRecords'")
-        ->toContain("\$ctx->user->can('getoperationalrecords:read')")
+        ->toContain('use Maac\\Sdk\\Tools\\ToolHandlerRegistry;')
+        ->toContain("registerCallable('getOperationalRecords'")
+        ->toContain('getoperationalrecords:read')
         ->toContain("'from_date' => \$args['from_date'] ?? null")
-        ->toContain("'records' => \$result['records']");
+        ->toContain("'records' => \$result['records']")
+        ->not->toContain('->user->can');
 });
 
-test('the python stub includes name, args, output, permission and return', function () {
+test('the python stub registers a real handler with args, output and permission hint', function () {
     $stub = $this->generator->generate($this->tool, SdkLanguage::Python);
 
     expect($stub)
-        ->toContain('@maac.tool("getOperationalRecords")')
-        ->toContain('async def getOperationalRecords(')
-        ->toContain('has_permission("getoperationalrecords:read")')
+        ->toContain('from maac_sdk import ToolHandlerRegistry')
+        ->toContain('@registry.register("getOperationalRecords")')
+        ->toContain('def getOperationalRecords(')
+        ->toContain('getoperationalrecords:read')
         ->toContain('from_date=args.get("from_date")')
-        ->toContain('"records": result["records"]');
+        ->toContain('"records": result["records"]')
+        ->not->toContain('has_permission');
 });
 
 test('boolean and integer schema types map to language-native types', function () {
@@ -81,5 +87,5 @@ test('python function names are sanitized into valid identifiers', function () {
 
     $stub = $this->generator->generate($hyphenated, SdkLanguage::Python);
 
-    expect($stub)->toContain('async def tool_9_get_records(');
+    expect($stub)->toContain('def tool_9_get_records(');
 });

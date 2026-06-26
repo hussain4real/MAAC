@@ -21,6 +21,7 @@ import {
     Btn,
     Card,
     CodeBlock,
+    EmptyState,
     EnvBadge,
     ExecChip,
     Field,
@@ -82,7 +83,36 @@ function AgentOverview({
     setTab: (tab: string) => void;
 }) {
     const MAAC = useMaacData();
-    const spark = [62, 70, 66, 78, 74, 88, 84, 96, 90, 104, 98, 112];
+
+    // Real run-volume trend: the agent's runs grouped by day. `runs` arrives
+    // newest-first (started_at desc), so the day buckets are reversed to read
+    // oldest → newest, capped at the most recent 12 days.
+    const runsByDay = new Map<string, number>();
+
+    for (const r of runs) {
+        if (r.started === '—') {
+            continue;
+        }
+
+        const day = r.started.slice(0, 6);
+        runsByDay.set(day, (runsByDay.get(day) ?? 0) + 1);
+    }
+
+    const spark = Array.from(runsByDay, ([label, value]) => ({ label, value }))
+        .reverse()
+        .slice(-12);
+
+    // Real average latency across the agent's runs that recorded one.
+    const latencies = runs
+        .map((r) => r.latencyMs)
+        .filter((ms): ms is number => typeof ms === 'number');
+    const avgLatency = latencies.length
+        ? (
+              latencies.reduce((sum, ms) => sum + ms, 0) /
+              latencies.length /
+              1000
+          ).toFixed(1) + 's'
+        : '—';
 
     return (
         <div
@@ -116,7 +146,7 @@ function AgentOverview({
                     />
                     <StatCard
                         label="Avg latency"
-                        value="4.3s"
+                        value={avgLatency}
                         icon="clock"
                         tone="blue"
                     />
@@ -274,15 +304,27 @@ function AgentOverview({
                 <Card>
                     <SectionHeader
                         title="Run trend"
-                        sub="Last 12h"
+                        sub="Runs per day"
                         icon="runs"
                     />
-                    <VBars
-                        data={spark.map((v) => ({ label: '', value: v }))}
-                        height={90}
-                        labels={false}
-                        color="var(--primary)"
-                    />
+                    {spark.length > 0 ? (
+                        <VBars
+                            data={spark}
+                            height={90}
+                            labels={false}
+                            color="var(--primary)"
+                        />
+                    ) : (
+                        <div
+                            style={{
+                                fontSize: 11.5,
+                                color: 'var(--text-3)',
+                                padding: '8px 0',
+                            }}
+                        >
+                            No runs recorded yet.
+                        </div>
+                    )}
                 </Card>
                 <Card>
                     <SectionHeader title="Tool readiness" icon="link" />
@@ -719,36 +761,32 @@ function AgentAPI({ agent }: { agent: Agent }) {
 }
 
 /* ---------- AgentVersions (local) ---------- */
-function AgentVersions({ agent }: { agent: Agent }) {
-    const cur = parseInt(agent.version.replace('v', '')) || 1;
-    const versions = Array.from({ length: cur }, (_, i) => {
-        const v = cur - i;
 
-        return {
-            v: 'v' + v,
-            current: v === cur,
-            date:
-                ([
-                    '2 days ago',
-                    '1 week ago',
-                    '3 weeks ago',
-                    '1 month ago',
-                    '2 months ago',
-                ][i] as string | undefined) ?? 'earlier',
-            note:
-                ([
-                    'Tuned prompt for delay threshold; added notifyWorkflowOwner.',
-                    'Switched to GPT-4o; raised max tokens.',
-                    'Added searchPolicyDocuments tool.',
-                    'Adjusted temperature to 0.3.',
-                    'Initial draft.',
-                ][i] as string | undefined) ?? 'Update',
-            author:
-                (['r.saleh', 'k.almansoori', 'r.saleh', 'r.saleh', 'r.saleh'][
-                    i
-                ] as string | undefined) ?? 'r.saleh',
-        };
-    });
+/**
+ * One published version snapshot of the agent, as mapped server-side from the
+ * `agent_versions` table by {@see \App\Http\Controllers\Maac\ConsoleController}.
+ */
+interface AgentVersionEntry {
+    version: string;
+    note: string | null;
+    author: string;
+    date: string;
+    current: boolean;
+}
+
+function AgentVersions({ history }: { history: AgentVersionEntry[] | null }) {
+    if (!history || history.length === 0) {
+        return (
+            <Card>
+                <SectionHeader title="Version history" icon="layers" />
+                <EmptyState
+                    icon="layers"
+                    title="No version history"
+                    desc="This agent has no recorded version snapshots yet. A version is captured when the agent is created and each time it is published."
+                />
+            </Card>
+        );
+    }
 
     return (
         <Card pad={false}>
@@ -760,9 +798,9 @@ function AgentVersions({ agent }: { agent: Agent }) {
                 />
             </div>
             <div style={{ padding: '0 16px 8px' }}>
-                {versions.map((v, i) => (
+                {history.map((v, i) => (
                     <div
-                        key={v.v}
+                        key={v.version}
                         style={{
                             display: 'flex',
                             gap: 14,
@@ -797,9 +835,9 @@ function AgentVersions({ agent }: { agent: Agent }) {
                                         : 'var(--text-2)',
                                 }}
                             >
-                                {v.v}
+                                {v.version}
                             </span>
-                            {i < versions.length - 1 && (
+                            {i < history.length - 1 && (
                                 <span
                                     style={{
                                         flex: 1,
@@ -819,7 +857,7 @@ function AgentVersions({ agent }: { agent: Agent }) {
                                 }}
                             >
                                 <span style={{ fontSize: 13, fontWeight: 600 }}>
-                                    {v.v}
+                                    {v.version}
                                 </span>
                                 {v.current && (
                                     <Badge tone="teal">Current</Badge>
@@ -841,7 +879,7 @@ function AgentVersions({ agent }: { agent: Agent }) {
                                     marginTop: 3,
                                 }}
                             >
-                                {v.note}
+                                {v.note ?? '—'}
                             </div>
                             <div
                                 style={{
@@ -855,21 +893,6 @@ function AgentVersions({ agent }: { agent: Agent }) {
                             >
                                 <Avatar name={v.author} size={16} />
                                 {v.author}
-                                {!v.current && (
-                                    <button
-                                        className="maac-link"
-                                        style={{
-                                            border: 'none',
-                                            background: 'none',
-                                            color: 'var(--primary)',
-                                            fontWeight: 600,
-                                            cursor: 'pointer',
-                                            marginLeft: 8,
-                                        }}
-                                    >
-                                        Restore
-                                    </button>
-                                )}
                             </div>
                         </div>
                     </div>
@@ -1204,7 +1227,13 @@ function EditAgentModal({
 }
 
 /* ---------- Page ---------- */
-export default function Show({ id }: { id: string }) {
+export default function Show({
+    id,
+    history,
+}: {
+    id: string;
+    history: AgentVersionEntry[] | null;
+}) {
     const { go, scope } = useMaacNav();
     const MAAC = useMaacData();
     const team = useCurrentTeam();
@@ -1343,7 +1372,7 @@ export default function Show({ id }: { id: string }) {
                 {tab === 'tools' && <AgentTools agent={agent} go={go} />}
                 {tab === 'api' && <AgentAPI agent={agent} />}
                 {tab === 'runs' && <AppHistory app={{ id: agent.appId }} />}
-                {tab === 'versions' && <AgentVersions agent={agent} />}
+                {tab === 'versions' && <AgentVersions history={history} />}
                 {tab === 'safety' && <AgentSafety agent={agent} llm={llm} />}
 
                 <EditAgentModal

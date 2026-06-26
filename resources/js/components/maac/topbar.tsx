@@ -63,7 +63,11 @@ function NotifMenu({
                 <span style={{ fontSize: 13, fontWeight: 700 }}>
                     Notifications
                 </span>
-                <Badge tone="orange">4 new</Badge>
+                {MAAC.dashboard.alerts.length > 0 && (
+                    <Badge tone="orange">
+                        {MAAC.dashboard.alerts.length} new
+                    </Badge>
+                )}
             </div>
             <div style={{ maxHeight: 340, overflowY: 'auto' }}>
                 {MAAC.dashboard.alerts.map((a, i) => (
@@ -130,7 +134,9 @@ function NotifMenu({
 
 export function Topbar() {
     const { go, persona, env, setEnv, theme, setTheme } = useMaacNav();
+    const MAAC = useMaacData();
     const [notifOpen, setNotifOpen] = useState(false);
+    const alertCount = MAAC.dashboard.alerts.length;
 
     return (
         <header
@@ -269,18 +275,20 @@ export function Topbar() {
                         }}
                     >
                         <Icon name="bell" size={17} />
-                        <span
-                            style={{
-                                position: 'absolute',
-                                top: 7,
-                                right: 8,
-                                width: 7,
-                                height: 7,
-                                borderRadius: 7,
-                                background: 'var(--orange-600)',
-                                border: '2px solid var(--surface)',
-                            }}
-                        />
+                        {alertCount > 0 && (
+                            <span
+                                style={{
+                                    position: 'absolute',
+                                    top: 7,
+                                    right: 8,
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: 7,
+                                    background: 'var(--orange-600)',
+                                    border: '2px solid var(--surface)',
+                                }}
+                            />
+                        )}
                     </button>
                     {notifOpen && (
                         <NotifMenu

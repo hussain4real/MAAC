@@ -24,6 +24,7 @@ import {
 } from '@/components/maac/ui';
 import type { Tone } from '@/components/maac/ui';
 import { useMaacNav } from '@/maac/nav';
+import { useMaacData } from '@/maac/use-data';
 
 /* ── code samples ── */
 
@@ -116,15 +117,14 @@ final class FetchRecordsHandler implements ToolHandler
 
 $registry = (new ToolHandlerRegistry)->register(new FetchRecordsHandler);`;
 
-const HANDLER_PY = `from maac_sdk import maac, Context
+const HANDLER_PY = `from maac_sdk import ToolHandlerRegistry
+
+registry = ToolHandlerRegistry()
 
 
-@maac.tool("fetch-records")  # contract v0.0.1
-async def fetch_records(args: dict, ctx: Context) -> dict:
+@registry.register("fetch-records")  # the tool contract slug
+def fetch_records(args: dict, ctx: dict) -> dict:
     # Enforce YOUR caller permissions before returning any data.
-    if not ctx.user.has_permission("fetch-records:read"):
-        return {"status": "rejected", "reason": "Not permitted"}
-
     records = your_app.query(query=args.get("query"))
 
     # Result must satisfy the output schema: { records: list, total: int }
@@ -336,6 +336,7 @@ const ERRORS: { code: string; http: number; meaning: string }[] = [
 
 const MATRIX: {
     name: string;
+    pkgKey?: 'php' | 'typescript' | 'python';
     version: string;
     status: string;
     tone: Tone;
@@ -343,6 +344,7 @@ const MATRIX: {
 }[] = [
     {
         name: 'PHP SDK (milaha/maac-sdk)',
+        pkgKey: 'php',
         version: '0.2.0',
         status: 'Supported',
         tone: 'teal',
@@ -350,6 +352,7 @@ const MATRIX: {
     },
     {
         name: 'TypeScript SDK (@maac/sdk)',
+        pkgKey: 'typescript',
         version: '0.2.0',
         status: 'Supported',
         tone: 'teal',
@@ -378,6 +381,7 @@ const MATRIX: {
     },
     {
         name: 'Python SDK',
+        pkgKey: 'python',
         version: '—',
         status: 'Experimental',
         tone: 'amber',
@@ -530,6 +534,22 @@ const SECTIONS: { id: string; label: string }[] = [
 /* ── page ── */
 
 export default function SdkDocs() {
+    const MAAC = useMaacData();
+    const platform = MAAC.sdkCompatibility.platform;
+
+    // SDK package rows draw their version from the live platform package
+    // catalog so the matrix can never drift from the published versions; the
+    // capability rows below them are static documentation of platform features.
+    const matrixRows = MATRIX.map((row) => {
+        if (!row.pkgKey) {
+            return row;
+        }
+
+        const pkg = platform.packages.find((p) => p.language === row.pkgKey);
+
+        return { ...row, version: pkg?.version ?? '—' };
+    });
+
     const { go } = useMaacNav();
     const [active, setActive] = useState(SECTIONS[0].id);
 
@@ -694,7 +714,7 @@ export default function SdkDocs() {
                                 }}
                             >
                                 <Badge tone="purple" icon="link">
-                                    API contract v0.0.1
+                                    API contract v{platform.api_version}
                                 </Badge>
                                 <Badge tone="teal">milaha/maac-sdk (PHP)</Badge>
                                 <Badge tone="teal">
@@ -1239,7 +1259,7 @@ export default function SdkDocs() {
                             id="matrix"
                             title="Compatibility matrix"
                             icon="grid"
-                            sub="API contract v0.0.1 — SDK package versions track the contract MAJOR"
+                            sub={`API contract v${platform.api_version} — SDK package versions track the contract MAJOR`}
                         >
                             <Table
                                 columns={[
@@ -1249,7 +1269,7 @@ export default function SdkDocs() {
                                     { label: 'Notes' },
                                 ]}
                             >
-                                {MATRIX.map((m) => (
+                                {matrixRows.map((m) => (
                                     <Tr key={m.name}>
                                         <Td strong>{m.name}</Td>
                                         <Td mono>{m.version}</Td>

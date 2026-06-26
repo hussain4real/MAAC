@@ -7,6 +7,7 @@ import { Icon } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { NAV_GROUPS, navAllowed, PERSONAS, SCREEN_OF } from '@/maac/personas';
 import type { Persona } from '@/maac/personas';
+import { useMaacData } from '@/maac/use-data';
 import { Avatar, Badge } from './ui';
 
 function Logo({ compact = false }: { compact?: boolean }) {
@@ -238,6 +239,10 @@ function AccountSwitcher({
 
 export function Sidebar() {
     const { go, persona, setPersona, activeScreen } = useMaacNav();
+    const MAAC = useMaacData();
+    // System status reflects real governance/observability alerts: a high-
+    // severity alert degrades the footer indicator.
+    const degraded = MAAC.dashboard.alerts.some((a) => a.sev === 'high');
     const [acctOpen, setAcctOpen] = useState(false);
     const visibleGroups = NAV_GROUPS.map((g) => ({
         ...g,
@@ -475,8 +480,12 @@ export function Sidebar() {
                         width: 8,
                         height: 8,
                         borderRadius: 8,
-                        background: 'var(--teal-400)',
-                        boxShadow: '0 0 0 3px rgba(60,191,174,.2)',
+                        background: degraded
+                            ? 'var(--orange-500)'
+                            : 'var(--teal-400)',
+                        boxShadow: degraded
+                            ? '0 0 0 3px rgba(245,158,11,.2)'
+                            : '0 0 0 3px rgba(60,191,174,.2)',
                     }}
                 />
                 <div
@@ -492,7 +501,9 @@ export function Sidebar() {
                             fontWeight: 600,
                         }}
                     >
-                        All systems operational
+                        {degraded
+                            ? 'Service degraded'
+                            : 'All systems operational'}
                     </div>
                     <div>MAAC v1.1 · Doha DC</div>
                 </div>
