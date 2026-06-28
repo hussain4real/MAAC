@@ -1,14 +1,18 @@
 <?php
 
 use App\Enums\Environment;
+use App\Enums\ExecMode;
 use App\Enums\LlmFinishReason;
 use App\Enums\LlmStatus;
 use App\Enums\RunStatus;
 use App\Models\AgentRun;
 use App\Models\LlmProvider;
+use App\Models\ToolContract;
 use App\Support\Runtime\AiLlmRouter;
 use App\Support\Runtime\HostedTools\HostedToolRegistry;
+use App\Support\Runtime\HostedTools\ProviderHostedToolRegistry;
 use App\Support\Runtime\LlmMessage;
+use App\Support\Runtime\LlmProviderToolDefinition;
 use App\Support\Runtime\LlmRequest;
 use App\Support\Runtime\LlmToolDefinition;
 use App\Support\Runtime\ModelPricing;
@@ -17,6 +21,8 @@ use App\Support\Runtime\RuntimeAgent;
 use App\Support\Runtime\RuntimeTool;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 use Laravel\Ai\Ai;
+use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Providers\Tools\WebSearch;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Tools\Request;
 
@@ -194,6 +200,74 @@ test('the AI router surfaces a native tool call returned by the provider', funct
     expect($completion->isToolCall())->toBeTrue()
         ->and($completion->toolName)->toBe('lookup')
         ->and($completion->toolArguments)->toBe(['q' => 'x']);
+});
+
+test('the AI router exposes web search as a provider-hosted tool', function () {
+    Ai::fakeAgent(RuntimeAgent::class, [
+        new ToolCall('call_1', 'webSearch', ['query' => 'latest world cup scores']),
+        'Provider searched the web.',
+    ]);
+
+    $completion = (new AiLlmRouter)->complete(new LlmRequest(
+        providerDriver: 'openai',
+        modelCode: 'gpt-5.4',
+        systemPrompt: 'You help.',
+        messages: [LlmMessage::user('find the latest scores')],
+        tools: [new LlmToolDefinition('lookup', 'Looks things up', ['q' => 'string'])],
+        providerTools: [LlmProviderToolDefinition::webSearch()],
+    ));
+
+    Ai::assertAgentWasPrompted(RuntimeAgent::class, function (AgentPrompt $prompt): bool {
+        $tools = [...$prompt->agent->tools()];
+
+        expect($tools)->toHaveCount(2)
+            ->and($tools[0])->toBeInstanceOf(RuntimeTool::class)
+            ->and($tools[1])->toBeInstanceOf(WebSearch::class);
+
+        return true;
+    });
+
+    expect($completion->isToolCall())->toBeFalse()
+        ->and($completion->text)->toBe('Provider searched the web.');
+});
+
+test('the AI router rejects unknown provider-hosted tool types', function () {
+    expect(fn () => (new AiLlmRouter)->complete(new LlmRequest(
+        providerDriver: 'openai',
+        modelCode: 'gpt-5.4',
+        systemPrompt: 'You help.',
+        messages: [LlmMessage::user('find the latest scores')],
+        providerTools: [new LlmProviderToolDefinition('unknown', 'unknown')],
+    )))->toThrow(InvalidArgumentException::class, 'Unsupported provider-hosted tool type [unknown].');
+});
+
+test('the provider-hosted registry recognizes only hosted web search contracts', function () {
+    $registry = new ProviderHostedToolRegistry;
+    $webSearch = ToolContract::factory()->make([
+        'slug' => 'webSearch',
+        'execution_mode' => ExecMode::Hosted,
+    ]);
+    $snakeWebSearch = ToolContract::factory()->make([
+        'slug' => 'web_search',
+        'execution_mode' => ExecMode::Hosted,
+    ]);
+    $clientWebSearch = ToolContract::factory()->make([
+        'slug' => 'webSearch',
+        'execution_mode' => ExecMode::Client,
+    ]);
+    $hostedEcho = ToolContract::factory()->make([
+        'slug' => 'echo',
+        'execution_mode' => ExecMode::Hosted,
+    ]);
+
+    expect($registry->has($webSearch))->toBeTrue()
+        ->and($registry->definitionFor($webSearch))->toEqual(LlmProviderToolDefinition::webSearch('webSearch'))
+        ->and($registry->has($snakeWebSearch))->toBeTrue()
+        ->and($registry->definitionFor($snakeWebSearch))->toEqual(LlmProviderToolDefinition::webSearch('web_search'))
+        ->and($registry->has($clientWebSearch))->toBeFalse()
+        ->and($registry->definitionFor($clientWebSearch))->toBeNull()
+        ->and($registry->has($hostedEcho))->toBeFalse()
+        ->and($registry->definitionFor($hostedEcho))->toBeNull();
 });
 
 test('a runtime tool maps the MAAC schema DSL to native JSON-schema types', function () {

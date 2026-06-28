@@ -6,6 +6,7 @@ use App\Support\Runtime\AiLlmRouter;
 use App\Support\Runtime\Contracts\LlmRouter;
 use App\Support\Runtime\DeterministicLlmRouter;
 use App\Support\Runtime\HostedTools\HostedToolRegistry;
+use App\Support\Runtime\HostedTools\ProviderHostedToolRegistry;
 use App\Support\Runtime\Knowledge\Contracts\KnowledgeRetriever;
 use App\Support\Runtime\Knowledge\LexicalKnowledgeRetriever;
 use Illuminate\Contracts\Foundation\Application;
@@ -36,5 +37,6 @@ class RuntimeServiceProvider extends ServiceProvider
         $this->app->bind(KnowledgeRetriever::class, LexicalKnowledgeRetriever::class);
 
         $this->app->singleton(HostedToolRegistry::class);
+        $this->app->singleton(ProviderHostedToolRegistry::class);
     }
 }

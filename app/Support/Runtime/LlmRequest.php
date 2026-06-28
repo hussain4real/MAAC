@@ -5,13 +5,14 @@ namespace App\Support\Runtime;
 /**
  * An immutable request to the LLM Router for one conversation turn: the
  * resolved provider/model, runtime settings, the full message history, and the
- * tool definitions the model may request.
+ * tool definitions the model may request or use provider-side.
  */
 final readonly class LlmRequest
 {
     /**
      * @param  array<int, LlmMessage>  $messages
      * @param  array<int, LlmToolDefinition>  $tools
+     * @param  array<int, LlmProviderToolDefinition>  $providerTools
      */
     public function __construct(
         public string $providerDriver,
@@ -19,6 +20,7 @@ final readonly class LlmRequest
         public string $systemPrompt,
         public array $messages,
         public array $tools = [],
+        public array $providerTools = [],
         public float $temperature = 0.7,
         public int $maxTokens = 1024,
         public int $timeoutSeconds = 30,

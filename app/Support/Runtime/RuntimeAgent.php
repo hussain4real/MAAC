@@ -7,6 +7,7 @@ use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Promptable;
+use Laravel\Ai\Providers\Tools\ProviderTool;
 
 /**
  * The single-turn `laravel/ai` agent the runtime drives one step at a time.
@@ -22,7 +23,7 @@ class RuntimeAgent implements Agent, Conversational, HasTools
     use Promptable;
 
     /**
-     * @param  array<int, RuntimeTool>  $tools
+     * @param  array<int, RuntimeTool|ProviderTool>  $tools
      */
     public function __construct(
         private readonly string $systemInstructions,
@@ -51,7 +52,7 @@ class RuntimeAgent implements Agent, Conversational, HasTools
     /**
      * The native tools offered to the model for this turn.
      *
-     * @return array<int, RuntimeTool>
+     * @return array<int, RuntimeTool|ProviderTool>
      */
     public function tools(): iterable
     {
