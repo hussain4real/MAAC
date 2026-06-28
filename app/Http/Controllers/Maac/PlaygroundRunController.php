@@ -42,7 +42,7 @@ class PlaygroundRunController extends Controller
 
         $environment = $request->environment();
 
-        if ($application->environment !== $environment || $agent->project->environment !== $environment) {
+        if ($agent->project->environment !== $environment) {
             return new JsonResponse([
                 'message' => 'The selected agent is not available in the '.$environment->label().' playground environment.',
             ], 422);

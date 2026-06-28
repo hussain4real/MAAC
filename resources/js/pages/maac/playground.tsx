@@ -34,11 +34,17 @@ import type {
     PlaygroundToolCall,
     PlaygroundTraceEntry,
 } from '@/hooks/use-playground-run';
-import type { Environment as ConsoleEnvironment } from '@/maac/data';
+import type {
+    Agent,
+    Environment as ConsoleEnvironment,
+    Llm,
+} from '@/maac/data';
 import { Icon } from '@/maac/icons';
 import type { IconName } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
 import { useMaacData } from '@/maac/use-data';
+import type { MaacData } from '@/maac/use-data';
+import type { MaacProviderHealth, MaacRoutingPolicy } from '@/types/global';
 
 /* ── trace presentation ── */
 
@@ -418,6 +424,103 @@ function toRuntimeEnvironment(
     return environment.toLowerCase() as PlaygroundEnvironment;
 }
 
+function sameProvider(provider: Llm, id: string | null | undefined): boolean {
+    return (
+        id !== undefined &&
+        id !== null &&
+        (provider.id === id || provider.uuid === id)
+    );
+}
+
+function sameAgent(agent: Agent, id: string): boolean {
+    return agent.id === id || agent.uuid === id;
+}
+
+function providerHealthFor(
+    provider: Llm,
+    health: MaacProviderHealth[],
+): MaacProviderHealth | undefined {
+    return health.find((entry) => sameProvider(provider, entry.id));
+}
+
+function providerIsAvailable(
+    provider: Llm | undefined,
+    env: ConsoleEnvironment,
+): boolean {
+    return provider?.status === 'Approved' && provider.envs.includes(env);
+}
+
+function providerIsEligibleForPolicy(
+    provider: Llm,
+    policy: MaacRoutingPolicy,
+    health: MaacProviderHealth[],
+    env: ConsoleEnvironment,
+): boolean {
+    if (!providerIsAvailable(provider, env)) {
+        return false;
+    }
+
+    if (
+        policy.maxCostPer1k !== null &&
+        provider.inCost + provider.outCost > policy.maxCostPer1k
+    ) {
+        return false;
+    }
+
+    const providerHealth = providerHealthFor(provider, health);
+
+    if (providerHealth !== undefined && !providerHealth.healthy) {
+        return false;
+    }
+
+    return !(
+        policy.maxLatencyMs !== null &&
+        providerHealth?.avgLatencyMs !== null &&
+        providerHealth?.avgLatencyMs !== undefined &&
+        providerHealth.avgLatencyMs > policy.maxLatencyMs
+    );
+}
+
+function routingCandidates(
+    policy: MaacRoutingPolicy,
+    agent: Agent,
+    MAAC: MaacData,
+): Llm[] {
+    const candidateIds = [
+        policy.primaryProviderId ?? agent.llm,
+        ...policy.fallbackProviderIds,
+    ];
+
+    return candidateIds
+        .map((id) => MAAC.llms.find((provider) => sameProvider(provider, id)))
+        .filter((provider): provider is Llm => provider !== undefined);
+}
+
+function hasEligibleRoutingProvider(
+    agent: Agent | undefined,
+    env: ConsoleEnvironment,
+    MAAC: MaacData,
+): boolean {
+    if (!agent) {
+        return false;
+    }
+
+    return MAAC.routingPolicies.some((policy) => {
+        if (!policy.enabled || !sameAgent(agent, policy.agentId)) {
+            return false;
+        }
+
+        return routingCandidates(policy, agent, MAAC).some((provider) =>
+            providerIsEligibleForPolicy(
+                provider,
+                policy,
+                MAAC.providerHealth,
+                env,
+            ),
+        );
+    });
+}
+
 export default function Playground() {
     const { go, scope, env } = useMaacNav();
     const MAAC = useMaacData();
@@ -425,17 +528,19 @@ export default function Playground() {
         usePlaygroundRun();
 
     const environmentValue = toRuntimeEnvironment(env);
-    const environmentApps = useMemo(
-        () => scope.apps.filter((app) => app.env === env),
-        [env, scope.apps],
+    const environmentProjects = useMemo(
+        () => scope.projects.filter((project) => project.env === env),
+        [env, scope.projects],
     );
-    const environmentProjects = useMemo(() => {
-        const appIds = new Set(environmentApps.map((app) => app.id));
-
-        return scope.projects.filter(
-            (project) => project.env === env && appIds.has(project.appId),
+    const environmentApps = useMemo(() => {
+        const projectAppIds = new Set(
+            environmentProjects.map((project) => project.appId),
         );
-    }, [env, environmentApps, scope.projects]);
+
+        return scope.apps.filter(
+            (app) => app.env === env || projectAppIds.has(app.id),
+        );
+    }, [env, environmentProjects, scope.apps]);
     const environmentAgents = useMemo(() => {
         const appIds = new Set(environmentApps.map((app) => app.id));
         const projectIds = new Set(
@@ -510,13 +615,13 @@ export default function Playground() {
 
     const selectedLlm = agent ? MAAC.llmById(agent.llm) : undefined;
     const isPublished = agent?.status === 'Published';
-    const modelAvailable =
-        selectedLlm?.status === 'Approved' && selectedLlm.envs.includes(env);
+    const modelAvailable = providerIsAvailable(selectedLlm, env);
+    const routedModelAvailable = hasEligibleRoutingProvider(agent, env, MAAC);
     const runBlockReason = !agent
         ? `No agent is available in ${env}.`
         : !isPublished
           ? 'Publish this agent to run it from the console.'
-          : !modelAvailable
+          : !modelAvailable && !routedModelAvailable
             ? `${selectedLlm?.name ?? 'The selected model'} is not approved for ${env}.`
             : null;
     const canRun = runBlockReason === null && msg.trim() !== '';
