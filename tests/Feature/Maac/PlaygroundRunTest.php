@@ -21,15 +21,15 @@ use App\Models\ToolContract;
  *
  * @param  array<string, mixed>  $agentAttributes
  */
-function playgroundAgent(Team $team, array $agentAttributes = []): Agent
+function playgroundAgent(Team $team, array $agentAttributes = [], Environment $environment = Environment::Production): Agent
 {
-    $application = Application::factory()->for($team)->create(['environment' => Environment::Production]);
-    $project = Project::factory()->for($application)->create(['environment' => Environment::Production]);
+    $application = Application::factory()->for($team)->create(['environment' => $environment]);
+    $project = Project::factory()->for($application)->create(['environment' => $environment]);
     $provider = LlmProvider::factory()->for($team)->create([
         'provider' => 'OpenAI',
         'code' => 'gpt-5.4',
         'status' => LlmStatus::Approved,
-        'environments' => [Environment::Production->value],
+        'environments' => [$environment->value],
         'input_cost' => 1.0,
         'output_cost' => 2.0,
     ]);
@@ -38,6 +38,20 @@ function playgroundAgent(Team $team, array $agentAttributes = []): Agent
         'agent_slug' => 'ops-summary',
         'system_prompt' => 'You summarize operations.',
     ], $agentAttributes));
+}
+
+/**
+ * Build the default console run payload.
+ *
+ * @param  array<string, mixed>  $attributes
+ * @return array<string, mixed>
+ */
+function playgroundRunPayload(array $attributes = []): array
+{
+    return array_merge([
+        'environment' => Environment::Production->value,
+        'input' => 'Summarize today.',
+    ], $attributes);
 }
 
 /**
@@ -87,9 +101,7 @@ test('a team member runs a published agent from the console and gets a real comp
     bindFakeRouter()->textThen('All vessels are on schedule.', tokensIn: 210, tokensOut: 70);
 
     $response = $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
-            'input' => 'Summarize today.',
-        ])
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload())
         ->assertCreated();
 
     $response->assertJsonPath('status', RunStatus::Completed->value)
@@ -110,9 +122,9 @@ test('the console run records the console user as the caller by default', functi
     bindFakeRouter()->textThen('Done.');
 
     $response = $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Hi',
-        ])->assertCreated();
+        ]))->assertCreated();
 
     $run = AgentRun::firstWhere('slug', $response->json('run_id'));
 
@@ -125,10 +137,10 @@ test('the console run honors an explicit caller label', function () {
     bindFakeRouter()->textThen('Done.');
 
     $response = $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Hi',
             'caller' => 'qa-suite',
-        ])->assertCreated();
+        ]))->assertCreated();
 
     expect(AgentRun::firstWhere('slug', $response->json('run_id'))->caller)->toBe('qa-suite');
 });
@@ -139,9 +151,9 @@ test('a draft agent cannot be run from the console', function () {
     bindFakeRouter()->textThen('Should not run.');
 
     $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Run me',
-        ])
+        ]))
         ->assertStatus(422)
         ->assertJsonPath('message', 'The agent must be published before it can be run from the console.');
 });
@@ -151,11 +163,57 @@ test('the run request validates the input prompt', function () {
     $agent = playgroundAgent($team);
 
     $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => '',
-        ])
+        ]))
         ->assertStatus(422)
         ->assertJsonValidationErrors(['input']);
+});
+
+test('the run request validates the selected playground environment', function () {
+    [$owner, $team] = ownerAndTeam();
+    $agent = playgroundAgent($team);
+
+    $this->actingAs($owner)
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+            'environment' => 'qa',
+            'input' => 'Hi',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['environment']);
+});
+
+test('a console run executes in the selected matching environment', function () {
+    [$owner, $team] = ownerAndTeam();
+    $agent = playgroundAgent($team, [], Environment::Development);
+    bindFakeRouter()->textThen('Development run complete.');
+
+    $response = $this->actingAs($owner)
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
+            'environment' => Environment::Development->value,
+            'input' => 'Run in development',
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('status', RunStatus::Completed->value);
+
+    $run = AgentRun::firstWhere('slug', $response->json('run_id'));
+
+    expect($run->environment)->toBe(Environment::Development);
+});
+
+test('a console run rejects an environment that does not match the selected agent graph', function () {
+    [$owner, $team] = ownerAndTeam();
+    $agent = playgroundAgent($team);
+
+    $this->actingAs($owner)
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
+            'environment' => Environment::Development->value,
+            'input' => 'Run in development',
+        ]))
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'The selected agent is not available in the Development playground environment.');
+
+    expect(AgentRun::query()->count())->toBe(0);
 });
 
 test('a member of another team cannot run this team\'s agent (tenant isolation)', function () {
@@ -168,9 +226,9 @@ test('a member of another team cannot run this team\'s agent (tenant isolation)'
     // The intruder posts to their own team URL (passes membership) but targets
     // the victim team's agent slug — the policy must deny it.
     $this->actingAs($intruder)
-        ->postJson(route('playground.runs.store', ['current_team' => $intruderTeam->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $intruderTeam->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Steal data',
-        ])
+        ]))
         ->assertForbidden();
 });
 
@@ -184,9 +242,9 @@ test('a frozen application blocks a console run', function () {
     bindFakeRouter()->textThen('Should not run.');
 
     $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Run me',
-        ])
+        ]))
         ->assertStatus(423);
 });
 
@@ -201,9 +259,9 @@ test('a client-side tool pauses the console run, then a submitted result resumes
 
     // First turn pauses for the client tool.
     $paused = $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Look up today',
-        ])
+        ]))
         ->assertCreated()
         ->assertJsonPath('status', RunStatus::WaitingForClient->value)
         ->assertJsonPath('tool_call.tool', 'lookup-records');
@@ -230,9 +288,9 @@ test('the tool-result request validates its payload', function () {
     bindFakeRouter()->toolCallThen('lookup-records', ['query' => 'today'])->textThen('done');
 
     $paused = $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Look up today',
-        ])->assertCreated();
+        ]))->assertCreated();
 
     $this->actingAs($owner)
         ->postJson(route('playground.runs.tool-result', ['current_team' => $team->slug, 'run' => $paused->json('run_id')]), [
@@ -249,9 +307,9 @@ test('another team cannot resume this team\'s paused run', function () {
     bindFakeRouter()->toolCallThen('lookup-records', ['query' => 'today'])->textThen('done');
 
     $paused = $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Look up today',
-        ])->assertCreated();
+        ]))->assertCreated();
 
     [$intruder, $intruderTeam] = ownerAndTeam();
 
@@ -275,9 +333,9 @@ test('a MAAC-hosted tool call executes inline and the run completes in one conso
         ->textThen('The total is 117690.');
 
     $response = $this->actingAs($owner)
-        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), [
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
             'input' => 'Add 18432, 99211 and 47 with the sum tool.',
-        ])
+        ]))
         ->assertCreated()
         ->assertJsonPath('status', RunStatus::Completed->value)
         ->assertJsonPath('response', 'The total is 117690.');

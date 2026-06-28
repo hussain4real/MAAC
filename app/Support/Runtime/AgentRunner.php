@@ -24,6 +24,7 @@ use App\Support\Governance\RunRedactor;
 use App\Support\Governance\RuntimeApprovalPolicy;
 use App\Support\Runtime\Contracts\LlmRouter;
 use App\Support\Runtime\HostedTools\HostedToolRegistry;
+use App\Support\Runtime\HostedTools\ProviderHostedToolRegistry;
 use App\Support\Runtime\Knowledge\KnowledgeToolExecutor;
 use App\Support\Runtime\Mcp\McpToolExecutor;
 use App\Support\Runtime\Remote\RemoteHttpToolExecutor;
@@ -48,6 +49,7 @@ class AgentRunner
     public function __construct(
         private readonly LlmRouter $router,
         private readonly HostedToolRegistry $hostedTools,
+        private readonly ProviderHostedToolRegistry $providerHostedTools,
         private readonly RunTracer $tracer,
         private readonly RunRedactor $redactor,
         private readonly RunWebhookEmitter $webhooks,
@@ -434,18 +436,45 @@ class AgentRunner
     private function buildRequest(AgentRun $run, Agent $agent): LlmRequest
     {
         $provider = $this->runProvider($run, $agent);
+        $tools = $this->toolDefinitions($agent);
 
         return new LlmRequest(
             providerDriver: $provider->driver(),
             modelCode: $provider->code,
             systemPrompt: $this->promptComposer->compose($agent),
             messages: $this->messages($run),
-            tools: $agent->tools->map(fn (ToolContract $tool): LlmToolDefinition => LlmToolDefinition::fromContract($tool))->all(),
+            tools: $tools['runtime'],
+            providerTools: $tools['provider'],
             temperature: $agent->temperature,
             maxTokens: $agent->max_tokens,
             timeoutSeconds: $this->turnTimeout(),
             apiKey: $provider->resolveApiKey($this->vault),
         );
+    }
+
+    /**
+     * Split MAAC-executed tools from hosted tools implemented by the AI provider.
+     *
+     * @return array{runtime: array<int, LlmToolDefinition>, provider: array<int, LlmProviderToolDefinition>}
+     */
+    private function toolDefinitions(Agent $agent): array
+    {
+        $runtime = [];
+        $provider = [];
+
+        foreach ($agent->tools as $tool) {
+            $providerTool = $this->providerHostedTools->definitionFor($tool);
+
+            if ($providerTool instanceof LlmProviderToolDefinition) {
+                $provider[] = $providerTool;
+
+                continue;
+            }
+
+            $runtime[] = LlmToolDefinition::fromContract($tool);
+        }
+
+        return ['runtime' => $runtime, 'provider' => $provider];
     }
 
     /**

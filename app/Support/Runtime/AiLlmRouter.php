@@ -3,7 +3,10 @@
 namespace App\Support\Runtime;
 
 use App\Support\Runtime\Contracts\LlmRouter;
+use InvalidArgumentException;
 use Laravel\Ai\Ai;
+use Laravel\Ai\Providers\Tools\ProviderTool;
+use Laravel\Ai\Providers\Tools\WebSearch;
 use Laravel\Ai\Responses\Data\ToolCall;
 
 /**
@@ -27,7 +30,10 @@ class AiLlmRouter implements LlmRouter
         $this->applyVaultKey($request);
 
         $tools = $this->offersTools($request)
-            ? array_map(fn (LlmToolDefinition $tool): RuntimeTool => new RuntimeTool($tool), $request->tools)
+            ? [
+                ...array_map(fn (LlmToolDefinition $tool): RuntimeTool => new RuntimeTool($tool), $request->tools),
+                ...array_map(fn (LlmProviderToolDefinition $tool): ProviderTool => $this->providerTool($tool), $request->providerTools),
+            ]
             : [];
 
         $response = (new RuntimeAgent($request->systemPrompt, $tools))->prompt(
@@ -53,13 +59,24 @@ class AiLlmRouter implements LlmRouter
     }
 
     /**
+     * Convert MAAC's provider-tool definition into the Laravel AI SDK tool.
+     */
+    private function providerTool(LlmProviderToolDefinition $definition): ProviderTool
+    {
+        return match ($definition->type) {
+            LlmProviderToolDefinition::WEB_SEARCH => new WebSearch,
+            default => throw new InvalidArgumentException("Unsupported provider-hosted tool type [{$definition->type}]."),
+        };
+    }
+
+    /**
      * Whether to offer the agent's tools to the model on this turn. Tools are
      * withheld immediately after a tool result so the model produces the final
      * answer from it rather than requesting the same tool again.
      */
     private function offersTools(LlmRequest $request): bool
     {
-        if ($request->tools === []) {
+        if ($request->tools === [] && $request->providerTools === []) {
             return false;
         }
 

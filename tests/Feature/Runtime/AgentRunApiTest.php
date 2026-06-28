@@ -23,6 +23,7 @@ use App\Support\Runtime\Contracts\HostedTool;
 use App\Support\Runtime\Contracts\LlmRouter;
 use App\Support\Runtime\HostedTools\HostedToolRegistry;
 use App\Support\Runtime\LlmCompletion;
+use App\Support\Runtime\LlmProviderToolDefinition;
 use App\Support\Runtime\LlmRequest;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -144,6 +145,26 @@ test('the system prompt sent to the model is the user prompt plus the auto-gener
         ->toContain('## Tools available to you')
         ->toContain('`getRecords` (Get Records)')
         ->toContain('Fetches operational voyage records.');
+});
+
+test('hosted web search is sent as a provider tool instead of a MAAC executed tool', function () {
+    assignTool([
+        'slug' => 'webSearch',
+        'name' => 'webSearch',
+        'description' => 'Approved external web search via the platform gateway.',
+        'execution_mode' => ExecMode::Hosted,
+    ]);
+
+    $fake = fakeRouter();
+    $fake->textThen('Latest scores are available.');
+
+    invokeAgent(['input' => 'What are the latest scores?'])->assertCreated();
+
+    expect($fake->requests[0]->tools)->toBe([])
+        ->and($fake->requests[0]->providerTools)->toEqual([
+            LlmProviderToolDefinition::webSearch('webSearch'),
+        ])
+        ->and(AgentRun::first()->toolCalls()->count())->toBe(0);
 });
 
 test('a run that needs a client-side tool pauses and returns the tool request', function () {

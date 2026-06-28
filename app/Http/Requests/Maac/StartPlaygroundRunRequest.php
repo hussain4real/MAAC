@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Maac;
 
+use App\Enums\Environment;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Validates a console playground run request. Authorization is enforced in the
@@ -18,9 +20,18 @@ class StartPlaygroundRunRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'environment' => ['required', Rule::enum(Environment::class)],
             'input' => ['required', 'string', 'max:8000'],
             'caller' => ['nullable', 'string', 'max:255'],
         ];
+    }
+
+    /**
+     * The console environment the run should execute in.
+     */
+    public function environment(): Environment
+    {
+        return Environment::from((string) $this->validated('environment'));
     }
 
     /**
