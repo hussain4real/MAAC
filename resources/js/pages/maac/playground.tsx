@@ -21,6 +21,7 @@ import {
     EmptyState,
     ExecChip,
     Field,
+    Input,
     PageHeader,
     SectionHeader,
     Select,
@@ -28,10 +29,12 @@ import {
 } from '@/components/maac/ui';
 import { usePlaygroundRun } from '@/hooks/use-playground-run';
 import type {
+    PlaygroundEnvironment,
     PlaygroundRunResult,
     PlaygroundToolCall,
     PlaygroundTraceEntry,
 } from '@/hooks/use-playground-run';
+import type { Environment as ConsoleEnvironment } from '@/maac/data';
 import { Icon } from '@/maac/icons';
 import type { IconName } from '@/maac/icons';
 import { useMaacNav } from '@/maac/nav';
@@ -409,53 +412,132 @@ function RunStats({ run }: RunStatsProps) {
 
 /* ── page ── */
 
+function toRuntimeEnvironment(
+    environment: ConsoleEnvironment,
+): PlaygroundEnvironment {
+    return environment.toLowerCase() as PlaygroundEnvironment;
+}
+
 export default function Playground() {
-    const { go, scope } = useMaacNav();
+    const { go, scope, env } = useMaacNav();
     const MAAC = useMaacData();
     const { run, error, processing, start, submitToolResult, reset } =
         usePlaygroundRun();
 
+    const environmentValue = toRuntimeEnvironment(env);
+    const environmentApps = useMemo(
+        () => scope.apps.filter((app) => app.env === env),
+        [env, scope.apps],
+    );
+    const environmentProjects = useMemo(() => {
+        const appIds = new Set(environmentApps.map((app) => app.id));
+
+        return scope.projects.filter(
+            (project) => project.env === env && appIds.has(project.appId),
+        );
+    }, [env, environmentApps, scope.projects]);
+    const environmentAgents = useMemo(() => {
+        const appIds = new Set(environmentApps.map((app) => app.id));
+        const projectIds = new Set(
+            environmentProjects.map((project) => project.id),
+        );
+
+        return scope.agents.filter(
+            (agent) =>
+                appIds.has(agent.appId) && projectIds.has(agent.projectId),
+        );
+    }, [environmentApps, environmentProjects, scope.agents]);
+
     const agentParam = new URLSearchParams(
         typeof window !== 'undefined' ? window.location.search : '',
     ).get('agent');
-    const inScopeAgents = scope.agents.length ? scope.agents : MAAC.agents;
-    const reqAgent =
-        agentParam && scope.has.agent(agentParam) ? agentParam : null;
     const ag0 =
-        MAAC.agentById(reqAgent ?? '') ||
-        inScopeAgents.find((a) => a.id === 'ag_ops_summary') ||
-        inScopeAgents[0];
+        (agentParam
+            ? environmentAgents.find((agent) => agent.id === agentParam)
+            : undefined) ||
+        environmentAgents.find((agent) => agent.id === 'ag_ops_summary') ||
+        environmentAgents[0];
 
-    const [appId, setAppId] = useState(ag0.appId);
-    const [projectId, setProjectId] = useState(ag0.projectId);
-    const [agentId, setAgentId] = useState(ag0.id);
-    const agent = MAAC.agentById(agentId)!;
+    const [selectedAppId, setSelectedAppId] = useState(
+        ag0?.appId ?? environmentApps[0]?.id ?? '',
+    );
+    const [selectedProjectId, setSelectedProjectId] = useState(
+        ag0?.projectId ?? '',
+    );
+    const [selectedAgentId, setSelectedAgentId] = useState(ag0?.id ?? '');
+    const appId = environmentApps.some(
+        (candidate) => candidate.id === selectedAppId,
+    )
+        ? selectedAppId
+        : (ag0?.appId ?? environmentApps[0]?.id ?? '');
+    const projectOptions = useMemo(
+        () => environmentProjects.filter((project) => project.appId === appId),
+        [appId, environmentProjects],
+    );
+    const projectId = projectOptions.some(
+        (candidate) => candidate.id === selectedProjectId,
+    )
+        ? selectedProjectId
+        : ag0?.appId === appId &&
+            projectOptions.some((candidate) => candidate.id === ag0.projectId)
+          ? ag0.projectId
+          : (projectOptions[0]?.id ?? '');
+    const agentOptions = useMemo(
+        () =>
+            environmentAgents.filter(
+                (candidate) =>
+                    candidate.appId === appId &&
+                    candidate.projectId === projectId,
+            ),
+        [appId, environmentAgents, projectId],
+    );
+    const agentId = agentOptions.some(
+        (candidate) => candidate.id === selectedAgentId,
+    )
+        ? selectedAgentId
+        : ag0?.projectId === projectId &&
+            agentOptions.some((candidate) => candidate.id === ag0.id)
+          ? ag0.id
+          : (agentOptions[0]?.id ?? '');
+    const agent = agentId ? MAAC.agentById(agentId) : undefined;
 
     const [msg, setMsg] = useState(
-        DEFAULT_MESSAGES[agentId] || FALLBACK_MESSAGE,
+        DEFAULT_MESSAGES[selectedAgentId] || FALLBACK_MESSAGE,
     );
 
     const toolCall =
         run?.status === 'waiting_for_client' ? (run.tool_call ?? null) : null;
 
-    const isPublished = agent.status === 'Published';
+    const selectedLlm = agent ? MAAC.llmById(agent.llm) : undefined;
+    const isPublished = agent?.status === 'Published';
+    const modelAvailable =
+        selectedLlm?.status === 'Approved' && selectedLlm.envs.includes(env);
+    const runBlockReason = !agent
+        ? `No agent is available in ${env}.`
+        : !isPublished
+          ? 'Publish this agent to run it from the console.'
+          : !modelAvailable
+            ? `${selectedLlm?.name ?? 'The selected model'} is not approved for ${env}.`
+            : null;
+    const canRun = runBlockReason === null && msg.trim() !== '';
 
     const onAgentChange = (id: string) => {
-        const a = MAAC.agentById(id);
-        setAgentId(id);
+        const a = environmentAgents.find((candidate) => candidate.id === id);
 
-        if (a) {
-            setAppId(a.appId);
-            setProjectId(a.projectId);
+        if (!a) {
+            return;
         }
 
+        setSelectedAgentId(id);
+        setSelectedAppId(a.appId);
+        setSelectedProjectId(a.projectId);
         setMsg(DEFAULT_MESSAGES[id] || FALLBACK_MESSAGE);
         reset();
     };
 
     const onRun = () => {
-        if (isPublished && msg.trim() !== '') {
-            void start(agent.id, msg);
+        if (agent && canRun) {
+            void start(agent.id, msg, environmentValue);
         }
     };
 
@@ -485,7 +567,12 @@ export default function Playground() {
                             <Btn
                                 variant="default"
                                 icon="agents"
-                                onClick={() => go('agent', { id: agentId })}
+                                onClick={() => {
+                                    if (agent) {
+                                        go('agent', { id: agent.id });
+                                    }
+                                }}
+                                disabled={!agent}
                             >
                                 Open agent
                             </Btn>
@@ -521,47 +608,116 @@ export default function Playground() {
                                 }}
                             >
                                 <Field label="Application">
-                                    <Select
-                                        value={appId}
-                                        onChange={(v) => {
-                                            setAppId(v);
-                                            const a = inScopeAgents.find(
-                                                (x) => x.appId === v,
-                                            );
+                                    {environmentApps.length > 0 ? (
+                                        <Select
+                                            value={appId}
+                                            onChange={(value) => {
+                                                const nextProject =
+                                                    environmentProjects.find(
+                                                        (candidate) =>
+                                                            candidate.appId ===
+                                                            value,
+                                                    );
+                                                const nextAgent =
+                                                    environmentAgents.find(
+                                                        (candidate) =>
+                                                            candidate.appId ===
+                                                                value &&
+                                                            (!nextProject ||
+                                                                candidate.projectId ===
+                                                                    nextProject.id),
+                                                    ) ||
+                                                    environmentAgents.find(
+                                                        (candidate) =>
+                                                            candidate.appId ===
+                                                            value,
+                                                    );
 
-                                            if (a) {
-                                                onAgentChange(a.id);
-                                            }
-                                        }}
-                                        options={scope.apps.map((a) => ({
-                                            value: a.id,
-                                            label: a.name,
-                                        }))}
-                                    />
+                                                setSelectedAppId(value);
+
+                                                if (nextAgent) {
+                                                    onAgentChange(nextAgent.id);
+
+                                                    return;
+                                                }
+
+                                                setSelectedProjectId(
+                                                    nextProject?.id ?? '',
+                                                );
+                                                setSelectedAgentId('');
+                                                setMsg(FALLBACK_MESSAGE);
+                                                reset();
+                                            }}
+                                            options={environmentApps.map(
+                                                (application) => ({
+                                                    value: application.id,
+                                                    label: application.name,
+                                                }),
+                                            )}
+                                        />
+                                    ) : (
+                                        <Input
+                                            value={`No ${env} applications`}
+                                            readOnly
+                                        />
+                                    )}
                                 </Field>
                                 <Field label="Project">
-                                    <Select
-                                        value={projectId}
-                                        onChange={setProjectId}
-                                        options={scope.projects
-                                            .filter((p) => p.appId === appId)
-                                            .map((p) => ({
-                                                value: p.id,
-                                                label: p.name,
-                                            }))}
-                                    />
+                                    {projectOptions.length > 0 ? (
+                                        <Select
+                                            value={projectId}
+                                            onChange={(value) => {
+                                                const nextAgent =
+                                                    environmentAgents.find(
+                                                        (candidate) =>
+                                                            candidate.projectId ===
+                                                            value,
+                                                    );
+
+                                                setSelectedProjectId(value);
+
+                                                if (nextAgent) {
+                                                    onAgentChange(nextAgent.id);
+
+                                                    return;
+                                                }
+
+                                                setSelectedAgentId('');
+                                                setMsg(FALLBACK_MESSAGE);
+                                                reset();
+                                            }}
+                                            options={projectOptions.map(
+                                                (project) => ({
+                                                    value: project.id,
+                                                    label: project.name,
+                                                }),
+                                            )}
+                                        />
+                                    ) : (
+                                        <Input
+                                            value={`No ${env} projects`}
+                                            readOnly
+                                        />
+                                    )}
                                 </Field>
                                 <Field label="Agent">
-                                    <Select
-                                        value={agentId}
-                                        onChange={onAgentChange}
-                                        options={inScopeAgents
-                                            .filter((a) => a.appId === appId)
-                                            .map((a) => ({
-                                                value: a.id,
-                                                label: a.name,
-                                            }))}
-                                    />
+                                    {agentOptions.length > 0 ? (
+                                        <Select
+                                            value={agentId}
+                                            onChange={onAgentChange}
+                                            options={agentOptions.map(
+                                                (candidate) => ({
+                                                    value: candidate.id,
+                                                    label: candidate.name,
+                                                }),
+                                            )}
+                                        />
+                                    ) : (
+                                        <Input
+                                            value={`No ${env} agents`}
+                                            readOnly
+                                        />
+                                    )}
                                 </Field>
                             </div>
                             <div
@@ -577,15 +733,21 @@ export default function Playground() {
                                     flexWrap: 'wrap',
                                 }}
                             >
-                                <Badge tone="purple" soft icon="llm">
-                                    {MAAC.llmById(agent.llm)?.name ?? agent.llm}
-                                </Badge>
-                                <Badge tone="neutral">
-                                    {agent.tools.length} tools
-                                </Badge>
-                                <AgentBadge status={agent.status} />
+                                {agent ? (
+                                    <>
+                                        <Badge tone="purple" soft icon="llm">
+                                            {selectedLlm?.name ?? agent.llm}
+                                        </Badge>
+                                        <Badge tone="neutral">
+                                            {agent.tools.length} tools
+                                        </Badge>
+                                        <AgentBadge status={agent.status} />
+                                    </>
+                                ) : (
+                                    <Badge tone="neutral">No {env} agent</Badge>
+                                )}
                             </div>
-                            {!isPublished && (
+                            {runBlockReason && (
                                 <div
                                     style={{
                                         marginTop: 10,
@@ -596,8 +758,8 @@ export default function Playground() {
                                         alignItems: 'center',
                                     }}
                                 >
-                                    <Icon name="alert" size={14} /> Publish this
-                                    agent to run it from the console.
+                                    <Icon name="alert" size={14} />{' '}
+                                    {runBlockReason}
                                 </div>
                             )}
                         </Card>
@@ -616,11 +778,7 @@ export default function Playground() {
                                 full
                                 icon={processing ? 'refresh' : 'play'}
                                 style={{ marginTop: 12 }}
-                                disabled={
-                                    processing ||
-                                    !isPublished ||
-                                    msg.trim() === ''
-                                }
+                                disabled={processing || !canRun}
                                 onClick={onRun}
                             >
                                 {processing
@@ -695,9 +853,7 @@ export default function Playground() {
                                             variant="primary"
                                             icon="play"
                                             onClick={onRun}
-                                            disabled={
-                                                !isPublished || processing
-                                            }
+                                            disabled={processing || !canRun}
                                         >
                                             Run Agent
                                         </Btn>
@@ -808,7 +964,7 @@ export default function Playground() {
                                                         gap: 8,
                                                     }}
                                                 >
-                                                    {agent.name}
+                                                    {agent?.name ?? 'Agent'}
                                                     <Badge tone="teal" dot>
                                                         completed
                                                     </Badge>

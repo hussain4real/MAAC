@@ -40,7 +40,15 @@ class PlaygroundRunController extends Controller
         $application = $agent->project->application;
         $incidents->assert($application);
 
-        $run = $runner->start($agent, $application, $application->environment, $request->runInput(), $request->caller());
+        $environment = $request->environment();
+
+        if ($application->environment !== $environment || $agent->project->environment !== $environment) {
+            return new JsonResponse([
+                'message' => 'The selected agent is not available in the '.$environment->label().' playground environment.',
+            ], 422);
+        }
+
+        $run = $runner->start($agent, $application, $environment, $request->runInput(), $request->caller());
 
         return new JsonResponse(PlaygroundRunPayload::for($run), 201);
     }

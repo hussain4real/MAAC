@@ -12,6 +12,7 @@ import {
     useEffect,
     useMemo,
     useState,
+    useSyncExternalStore,
 } from 'react';
 import type { ReactNode } from 'react';
 import ConsoleRoutes from '@/actions/App/Http/Controllers/Maac/ConsoleController';
@@ -22,6 +23,10 @@ import type { Persona, PersonaId, Scope, ScreenId } from './personas';
 import { useMaacDataset } from './use-data';
 
 type Environment = 'Production' | 'Staging' | 'Development';
+const DEFAULT_ENVIRONMENT: Environment = 'Production';
+const ENVIRONMENT_STORAGE_KEY = 'maac-env';
+const ENVIRONMENT_CHANGE_EVENT = 'maac-env-change';
+const ENVIRONMENTS: Environment[] = ['Production', 'Staging', 'Development'];
 
 /** Logical screen names used by go()/href(), mirroring the prototype router. */
 export type RouteName =
@@ -182,21 +187,45 @@ function readPersona(): Persona {
     return PERSONAS.find((p) => p.id === id) ?? PERSONAS[0];
 }
 
+function isEnvironment(value: string | null): value is Environment {
+    return ENVIRONMENTS.includes(value as Environment);
+}
+
+function readEnvironmentSnapshot(): Environment {
+    if (typeof window === 'undefined') {
+        return DEFAULT_ENVIRONMENT;
+    }
+
+    const value = localStorage.getItem(ENVIRONMENT_STORAGE_KEY);
+
+    return isEnvironment(value) ? value : DEFAULT_ENVIRONMENT;
+}
+
+function subscribeToEnvironmentChanges(onChange: () => void): () => void {
+    if (typeof window === 'undefined') {
+        return () => {};
+    }
+
+    window.addEventListener('storage', onChange);
+    window.addEventListener(ENVIRONMENT_CHANGE_EVENT, onChange);
+
+    return () => {
+        window.removeEventListener('storage', onChange);
+        window.removeEventListener(ENVIRONMENT_CHANGE_EVENT, onChange);
+    };
+}
+
 export function MaacNavProvider({ children }: { children: ReactNode }) {
     const page = usePage<{ currentTeam?: { slug: string } | null }>();
     const team = page.props.currentTeam?.slug ?? '';
     const { resolvedAppearance, updateAppearance } = useAppearance();
 
     const [persona, setPersonaState] = useState<Persona>(readPersona);
-    const [env, setEnvState] = useState<Environment>(() => {
-        if (typeof window === 'undefined') {
-            return 'Production';
-        }
-
-        return (
-            (localStorage.getItem('maac-env') as Environment) || 'Production'
-        );
-    });
+    const env = useSyncExternalStore(
+        subscribeToEnvironmentChanges,
+        readEnvironmentSnapshot,
+        () => DEFAULT_ENVIRONMENT,
+    );
 
     const data = useMaacDataset();
     const scope = useMemo(() => computeScope(persona, data), [persona, data]);
@@ -236,8 +265,8 @@ export function MaacNavProvider({ children }: { children: ReactNode }) {
     );
 
     const setEnv = useCallback((next: Environment) => {
-        setEnvState(next);
-        localStorage.setItem('maac-env', next);
+        localStorage.setItem(ENVIRONMENT_STORAGE_KEY, next);
+        window.dispatchEvent(new Event(ENVIRONMENT_CHANGE_EVENT));
     }, []);
 
     const setTheme = useCallback(

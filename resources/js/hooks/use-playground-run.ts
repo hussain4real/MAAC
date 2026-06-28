@@ -47,11 +47,18 @@ export interface PlaygroundRunResult {
     tool_call?: PlaygroundToolCall | null;
 }
 
+export type PlaygroundEnvironment =
+    'development' | 'sandbox' | 'staging' | 'production';
+
 export interface UsePlaygroundRunReturn {
     run: PlaygroundRunResult | null;
     error: string | null;
     processing: boolean;
-    start: (agentId: string, input: string) => Promise<void>;
+    start: (
+        agentId: string,
+        input: string,
+        environment: PlaygroundEnvironment,
+    ) => Promise<void>;
     submitToolResult: (
         runId: string,
         toolCallId: string,
@@ -71,8 +78,12 @@ const JSON_HEADERS = { Accept: 'application/json' } as const;
  */
 export function usePlaygroundRun(): UsePlaygroundRunReturn {
     const { currentTeam } = usePage().props;
-    const runHttp = useHttp<{ input: string }, PlaygroundRunResult>({
+    const runHttp = useHttp<
+        { input: string; environment: PlaygroundEnvironment },
+        PlaygroundRunResult
+    >({
         input: '',
+        environment: 'production',
     });
     // `result` is typed as `object` (not a recursive `FormDataConvertible` map)
     // purely to keep useHttp's mapped form types from instantiating infinitely;
@@ -86,7 +97,11 @@ export function usePlaygroundRun(): UsePlaygroundRunReturn {
     const [error, setError] = useState<string | null>(null);
 
     const start = useCallback(
-        async (agentId: string, input: string): Promise<void> => {
+        async (
+            agentId: string,
+            input: string,
+            environment: PlaygroundEnvironment,
+        ): Promise<void> => {
             if (!currentTeam) {
                 return;
             }
@@ -95,7 +110,7 @@ export function usePlaygroundRun(): UsePlaygroundRunReturn {
             setRun(null);
 
             try {
-                runHttp.transform(() => ({ input }));
+                runHttp.transform(() => ({ input, environment }));
                 const result = await runHttp.submit(
                     store({ current_team: currentTeam.slug, agent: agentId }),
                     { headers: JSON_HEADERS },
