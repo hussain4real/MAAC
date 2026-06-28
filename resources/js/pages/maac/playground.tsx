@@ -425,17 +425,19 @@ export default function Playground() {
         usePlaygroundRun();
 
     const environmentValue = toRuntimeEnvironment(env);
-    const environmentApps = useMemo(
-        () => scope.apps.filter((app) => app.env === env),
-        [env, scope.apps],
+    const environmentProjects = useMemo(
+        () => scope.projects.filter((project) => project.env === env),
+        [env, scope.projects],
     );
-    const environmentProjects = useMemo(() => {
-        const appIds = new Set(environmentApps.map((app) => app.id));
-
-        return scope.projects.filter(
-            (project) => project.env === env && appIds.has(project.appId),
+    const environmentApps = useMemo(() => {
+        const projectAppIds = new Set(
+            environmentProjects.map((project) => project.appId),
         );
-    }, [env, environmentApps, scope.projects]);
+
+        return scope.apps.filter(
+            (app) => app.env === env || projectAppIds.has(app.id),
+        );
+    }, [env, environmentProjects, scope.apps]);
     const environmentAgents = useMemo(() => {
         const appIds = new Set(environmentApps.map((app) => app.id));
         const projectIds = new Set(
@@ -510,15 +512,11 @@ export default function Playground() {
 
     const selectedLlm = agent ? MAAC.llmById(agent.llm) : undefined;
     const isPublished = agent?.status === 'Published';
-    const modelAvailable =
-        selectedLlm?.status === 'Approved' && selectedLlm.envs.includes(env);
     const runBlockReason = !agent
         ? `No agent is available in ${env}.`
         : !isPublished
           ? 'Publish this agent to run it from the console.'
-          : !modelAvailable
-            ? `${selectedLlm?.name ?? 'The selected model'} is not approved for ${env}.`
-            : null;
+          : null;
     const canRun = runBlockReason === null && msg.trim() !== '';
 
     const onAgentChange = (id: string) => {

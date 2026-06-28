@@ -201,7 +201,28 @@ test('a console run executes in the selected matching environment', function () 
     expect($run->environment)->toBe(Environment::Development);
 });
 
-test('a console run rejects an environment that does not match the selected agent graph', function () {
+test('a console run may use a project environment that differs from the application environment', function () {
+    [$owner, $team] = ownerAndTeam();
+    $agent = playgroundAgent($team, [], Environment::Staging);
+    $agent->project->application->update(['environment' => Environment::Production]);
+    bindFakeRouter()->textThen('Staging project run complete.');
+
+    $response = $this->actingAs($owner)
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
+            'environment' => Environment::Staging->value,
+            'input' => 'Run the staging project',
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('status', RunStatus::Completed->value);
+
+    $run = AgentRun::firstWhere('slug', $response->json('run_id'));
+
+    expect($run->environment)->toBe(Environment::Staging)
+        ->and($run->application_id)->toBe($agent->project->application_id)
+        ->and($run->project_id)->toBe($agent->project_id);
+});
+
+test('a console run rejects an environment that does not match the selected project', function () {
     [$owner, $team] = ownerAndTeam();
     $agent = playgroundAgent($team);
 
