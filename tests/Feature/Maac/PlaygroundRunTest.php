@@ -5,10 +5,12 @@ use App\Enums\Environment;
 use App\Enums\ExecMode;
 use App\Enums\LlmStatus;
 use App\Enums\RunStatus;
+use App\Enums\Sensitivity;
 use App\Models\Agent;
 use App\Models\AgentRun;
 use App\Models\Application;
 use App\Models\LlmProvider;
+use App\Models\ModelRoutingPolicy;
 use App\Models\Project;
 use App\Models\Team;
 use App\Models\ToolAssignment;
@@ -220,6 +222,39 @@ test('a console run may use a project environment that differs from the applicat
     expect($run->environment)->toBe(Environment::Staging)
         ->and($run->application_id)->toBe($agent->project->application_id)
         ->and($run->project_id)->toBe($agent->project_id);
+});
+
+test('a console run can route to an eligible fallback when the agent model is unavailable', function () {
+    [$owner, $team] = ownerAndTeam();
+    $agent = playgroundAgent($team, [], Environment::Staging);
+    $agent->project->application->update(['environment' => Environment::Production]);
+    $agent->llmProvider->update(['environments' => [Environment::Production->value]]);
+    $fallback = LlmProvider::factory()->for($team)->create([
+        'provider' => 'OpenAI',
+        'code' => 'gpt-5.4-mini',
+        'status' => LlmStatus::Approved,
+        'sensitivity' => Sensitivity::Internal,
+        'environments' => [Environment::Staging->value],
+        'input_cost' => 0.5,
+        'output_cost' => 1.5,
+    ]);
+    ModelRoutingPolicy::factory()->for($team)->for($agent)->create([
+        'fallback_provider_ids' => [$fallback->id],
+    ]);
+    bindFakeRouter()->textThen('Routed fallback run complete.');
+
+    $response = $this->actingAs($owner)
+        ->postJson(route('playground.runs.store', ['current_team' => $team->slug, 'agent' => $agent->slug]), playgroundRunPayload([
+            'environment' => Environment::Staging->value,
+            'input' => 'Run the staging project with a fallback model',
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('status', RunStatus::Completed->value);
+
+    $run = AgentRun::firstWhere('slug', $response->json('run_id'));
+
+    expect($run->environment)->toBe(Environment::Staging)
+        ->and($run->llm_provider_id)->toBe($fallback->id);
 });
 
 test('a console run rejects an environment that does not match the selected project', function () {
