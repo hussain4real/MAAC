@@ -7,7 +7,7 @@ MAAC SDKs available to pilot application teams.
 
 | Language | Package | Version | Distribution |
 |----------|---------|---------|--------------|
-| PHP | `maac/sdk` | `0.2.0` | Private GitHub repository tag through Composer VCS |
+| PHP | `maac/sdk` | `0.2.0` | Private Composer VCS package repository |
 | TypeScript | `@maac/sdk` | `0.2.0` | GitHub Packages npm registry |
 
 The MAAC API contract remains `v0.0.1`. These package versions are client
@@ -18,9 +18,11 @@ backward compatible.
 
 GitHub Packages supports the npm registry used by `@maac/sdk`, but it does not
 provide a Composer package registry. For the manual pilot release, PHP consumers
-install `maac/sdk` from a private GitHub repository tag using Composer's VCS
-repository support. If MAAC later needs registry-style Composer distribution,
-use Private Packagist or another Composer-compatible private registry.
+install `maac/sdk` from a private Composer-compatible source: either a split PHP
+SDK repository whose root `composer.json` is `maac/sdk`, or a package/artifact
+repository such as Private Packagist. Do not point Composer VCS at the MAAC
+monorepo root; Composer reads the root `composer.json` and will not discover the
+nested `packages/maac-sdk-php/composer.json` package.
 
 ## Consumer Authentication
 
@@ -37,15 +39,15 @@ Required token capabilities:
 
 ## Installing The PHP SDK
 
-In the consuming application's `composer.json`, add the private repository that
-contains the tagged SDK package:
+In the consuming application's `composer.json`, add the private repository whose
+root package is the tagged `maac/sdk` package:
 
 ```json
 {
   "repositories": [
     {
       "type": "vcs",
-      "url": "https://github.com/OWNER/MAAC.git"
+      "url": "https://github.com/OWNER/maac-sdk-php.git"
     }
   ],
   "require": {
@@ -135,15 +137,15 @@ Record the release evidence:
    npm publish
    ```
 
-5. Verify a clean PHP install from the private Git tag and a clean npm install
-   from GitHub Packages in temporary consumer projects.
+5. Verify a clean PHP install from the private Composer source and a clean npm
+   install from GitHub Packages in temporary consumer projects.
 6. Share the integration guide, package install commands, required environment
    variables, and credential generation steps with pilot application teams.
 
 ## Consumer Smoke Checks
 
-For PHP, create a temporary project with the VCS repository configured, install
-`maac/sdk:^0.2`, and verify autoloading:
+For PHP, create a temporary project with the split SDK VCS repository or private
+Composer registry configured, install `maac/sdk:^0.2`, and verify autoloading:
 
 ```bash
 php -r "require 'vendor/autoload.php'; echo Maac\\Sdk\\MaacClient::VERSION.PHP_EOL;"
